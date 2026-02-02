@@ -13,7 +13,7 @@ app.use((req, _res, next) => { console.log(new Date().toISOString(), req.method,
 
 app.use(express.json());
 
-const origins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
+const origins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,https://app.projetos-rc.online')
   .split(',').map(s => s.trim()).filter(Boolean);
 
 const corsConfig = {
