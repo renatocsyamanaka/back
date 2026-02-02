@@ -6,7 +6,7 @@ const ctrl = require('../controllers/assignmentController');
  * @swagger
  * tags:
  *   - name: Assignments
- *     description: Agenda dos colaboradores
+ *     description: Agenda dos colaboradores 2V
  */
 
 /**
