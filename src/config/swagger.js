@@ -12,7 +12,7 @@ const options = {
       version: '1.0.0',
       description: 'API de gestão de colaboradores, agendas, requisições e banco de horas.'
     },
-    servers: [{ url: 'http://localhost:3000', description: 'Local' }],
+    servers: [{ url: 'https://api.projetos-rc.online', description: 'Local' }],
     components: {
       securitySchemes: {
         bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }
