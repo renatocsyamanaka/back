@@ -8,7 +8,7 @@ const sync = process.argv.includes('--sync');
 (async () => {
   await bootstrap({ sync });
   app.listen(PORT, () => {
-    console.log(`API on http://localhost:${PORT}`);
-    console.log(`Swagger UI on http://localhost:${PORT}/docs`);
+    console.log(`SERVIDOR BACK-END ATIVO`);
+    console.log(`Swagger https://api.projetos-rc.online/api`);
   });
 })();
