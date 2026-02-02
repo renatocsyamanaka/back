@@ -3,7 +3,7 @@ const { Op, UniqueConstraintError } = require('sequelize'); // ⬅️ importa o 
 const { News, NewsRead, User } = require('../models');
 const { ok, created, bad, notFound, forbidden } = require('../utils/responses');
 
-const BASE_URL = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+const BASE_URL = process.env.BASE_URL || 'https://api.projetos-rc.online';
 
 const createSchema = Joi.object({
   title: Joi.string().required(),

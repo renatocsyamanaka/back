@@ -129,7 +129,7 @@ router.post('/:id/attachments', auth(), requireLevel(2), upload.single('file'), 
     const allowed = ['CONTRATO', 'DOCUMENTO', 'FOTO', 'OUTRO'];
     if (!allowed.includes(kind)) return res.status(400).json({ error: 'kind inválido' });
 
-    const BASE_URL = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const BASE_URL = process.env.BASE_URL || 'https://api.projetos-rc.online';
     const url = `${BASE_URL}/uploads/needs/${needId}/${req.file.filename}`;
 
     const row = await NeedAttachment.create({
