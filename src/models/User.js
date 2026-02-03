@@ -12,37 +12,40 @@ class User extends Model {
 
 User.init(
   {
-    name:          { type: DataTypes.STRING, allowNull: false },
+    name: { type: DataTypes.STRING, allowNull: false },
 
-    // Agora podem ser nulos para perfis sem login (técnico/PSO)
-    email:         { type: DataTypes.STRING, allowNull: true, unique: true, validate: { isEmail: true } },
+    // Agora podem ser nulos para perfis sem login (técnico/PSO/ATA/PRP/SPOT)
+    email: { type: DataTypes.STRING, allowNull: true, unique: true, validate: { isEmail: true } },
     password_hash: { type: DataTypes.STRING, allowNull: true },
 
     // Flag que define se precisa de credenciais
-    loginEnabled:  { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    loginEnabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
 
-    sex:        { type: DataTypes.ENUM('M', 'F', 'O'), allowNull: true },
-    avatarUrl:  { type: DataTypes.STRING, allowNull: true },
-    isActive:   { type: DataTypes.BOOLEAN, defaultValue: true },
+    sex: { type: DataTypes.ENUM('M', 'F', 'O'), allowNull: true },
+    avatarUrl: { type: DataTypes.STRING, allowNull: true },
+    isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
 
     // relacionamento simples
-    managerId:  { type: DataTypes.INTEGER, allowNull: true },
+    managerId: { type: DataTypes.INTEGER, allowNull: true },
+
+    // ✅ novo: pertence ao estoque avançado?
+    estoqueAvancado: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
 
     // Dados complementares
-    phone:            { type: DataTypes.STRING, allowNull: true },
-    vendorCode:       { type: DataTypes.STRING, allowNull: true },
-    serviceAreaCode:  { type: DataTypes.STRING, allowNull: true },
-    serviceAreaName:  { type: DataTypes.STRING, allowNull: true },
+    phone: { type: DataTypes.STRING, allowNull: true },
+    vendorCode: { type: DataTypes.STRING, allowNull: true },
+    serviceAreaCode: { type: DataTypes.STRING, allowNull: true },
+    serviceAreaName: { type: DataTypes.STRING, allowNull: true },
 
     // Endereço
-    addressStreet:     { type: DataTypes.STRING, allowNull: true },
-    addressNumber:     { type: DataTypes.STRING, allowNull: true },
+    addressStreet: { type: DataTypes.STRING, allowNull: true },
+    addressNumber: { type: DataTypes.STRING, allowNull: true },
     addressComplement: { type: DataTypes.STRING, allowNull: true },
-    addressDistrict:   { type: DataTypes.STRING, allowNull: true },
-    addressCity:       { type: DataTypes.STRING, allowNull: true },
-    addressState:      { type: DataTypes.STRING, allowNull: true },
-    addressZip:        { type: DataTypes.STRING, allowNull: true },
-    addressCountry:    { type: DataTypes.STRING, allowNull: true, defaultValue: 'Brasil' },
+    addressDistrict: { type: DataTypes.STRING, allowNull: true },
+    addressCity: { type: DataTypes.STRING, allowNull: true },
+    addressState: { type: DataTypes.STRING, allowNull: true },
+    addressZip: { type: DataTypes.STRING, allowNull: true },
+    addressCountry: { type: DataTypes.STRING, allowNull: true, defaultValue: 'Brasil' },
 
     // Coordenadas
     lat: { type: DataTypes.DECIMAL(10, 7), allowNull: true },

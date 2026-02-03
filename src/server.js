@@ -9,6 +9,5 @@ const sync = process.argv.includes('--sync');
   await bootstrap({ sync });
   app.listen(PORT, () => {
     console.log(`SERVIDOR BACK-END ATIVO`);
-    console.log(`Swagger https://api.projetos-rc.online/api`);
   });
 })();

@@ -34,10 +34,14 @@ const providerSchema = Joi.object({
   providerName: Joi.string().min(2).max(160).required(),
   providerWhatsapp: Joi.string().max(30).allow(null, ''),
   negotiationTier: Joi.string().valid('OURO', 'PRATA', 'BRONZE').allow(null),
-  homologationStatus: Joi.string()
-    .valid('NAO_INICIADA', 'EM_ANDAMENTO', 'APROVADO', 'REPROVADO')
-    .allow(null),
   negotiationNotes: Joi.string().allow('', null),
+
+  // ✅ novos status por etapa
+  homologTablesStatus: Joi.string().valid('PENDENTE', 'EM_ANDAMENTO', 'CONCLUIDO').allow(null),
+  homologDocsStatus: Joi.string().valid('PENDENTE', 'EM_ANDAMENTO', 'CONCLUIDO').allow(null),
+  homologContractStatus: Joi.string().valid('PENDENTE', 'EM_ANDAMENTO', 'CONCLUIDO').allow(null),
+  homologCrmStatus: Joi.string().valid('PENDENTE', 'EM_ANDAMENTO', 'CONCLUIDO').allow(null),
+  homologErpStatus: Joi.string().valid('PENDENTE', 'EM_ANDAMENTO', 'CONCLUIDO').allow(null),
 }).required();
 
 const statusSchema = Joi.object({
@@ -134,32 +138,35 @@ module.exports = {
     return ok(res, row);
   },
 
-  /** PATCH /needs/:id/provider */
-  async updateProvider(req, res) {
-    const { id } = req.params;
+ /** PATCH /needs/:id/provider */
+async updateProvider(req, res) {
+  const { id } = req.params;
 
-    const { error, value } = providerSchema.validate(req.body, { stripUnknown: true });
-    if (error) return bad(res, error.message);
+  const { error, value } = providerSchema.validate(req.body, { stripUnknown: true });
+  if (error) return bad(res, error.message);
 
-    const row = await Need.findByPk(id);
-    if (!row) return notFound(res, 'Requisição não encontrada');
+  const row = await Need.findByPk(id);
+  if (!row) return notFound(res, 'Requisição não encontrada');
 
-    await row.update({
-      providerName: value.providerName,
-      providerWhatsapp: value.providerWhatsapp || null,
-      negotiationTier: value.negotiationTier ?? null,
-      homologationStatus: value.homologationStatus ?? null,
-      negotiationNotes: value.negotiationNotes ?? null,
+  await row.update({
+    providerName: value.providerName,
+    providerWhatsapp: value.providerWhatsapp || null,
+    negotiationTier: value.negotiationTier ?? null,
+    negotiationNotes: value.negotiationNotes ?? null,
 
-      status: row.status === 'OPEN' ? 'IN_PROGRESS' : row.status,
-    });
+    // ✅ novos campos
+    homologTablesStatus: value.homologTablesStatus ?? row.homologTablesStatus ?? 'PENDENTE',
+    homologDocsStatus: value.homologDocsStatus ?? row.homologDocsStatus ?? 'PENDENTE',
+    homologContractStatus: value.homologContractStatus ?? row.homologContractStatus ?? 'PENDENTE',
+    homologCrmStatus: value.homologCrmStatus ?? row.homologCrmStatus ?? 'PENDENTE',
+    homologErpStatus: value.homologErpStatus ?? row.homologErpStatus ?? 'PENDENTE',
 
-    const out = await Need.findByPk(row.id, {
-      include: await includeForNeed(),
-    });
+    status: row.status === 'OPEN' ? 'IN_PROGRESS' : row.status,
+  });
 
-    return ok(res, out);
-  },
+  const out = await Need.findByPk(row.id, { include: await includeForNeed() });
+  return ok(res, out);
+},
 
   /** PATCH /needs/:id/address */
   async updateAddress(req, res) {

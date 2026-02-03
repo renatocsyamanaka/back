@@ -8,7 +8,7 @@ const { Op } = require('sequelize');
 /* ======================
    ====== CONSTANTES =====
    ====================== */
-const baseUrl = process.env.BASE_URL || 'https://api.projetos-rc.online';
+const baseUrl = process.env.BASE_URL || 'http://localhost:3000/api';
 
 const defaultIncludes = [
   { model: Role, as: 'role', attributes: ['id', 'name', 'level'] },
@@ -17,17 +17,53 @@ const defaultIncludes = [
 ];
 
 /* ======================
+   ====== HELPERS =======
+   ====================== */
+
+function normRoleName(s) {
+  return (s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // remove acentos
+    .replace(/[_-]+/g, ' ')          // _ e - viram espaço
+    .replace(/\s+/g, ' ')           // normaliza espaços
+    .trim()
+    .toLowerCase();
+}
+
+// ✅ Cargos permitidos no endpoint /workers (sem login)
+const WORKER_ALLOWED_ROLES = new Set([
+  'tecnico',
+  'pso',
+  'ata',
+  'prp',
+  'spot',
+]);
+
+function roleKindFromRoleName(roleName) {
+  const r = normRoleName(roleName);
+  if (r === 'pso') return 'PSO';
+  if (r === 'ata') return 'ATA';
+  if (r === 'spot') return 'SPOT';
+  if (r === 'prp') return 'PRP';
+  if (r === 'tecnico') return 'TECH';
+  return 'OTHER';
+}
+
+/* ======================
    ====== SCHEMAS =======
    ====================== */
 
-// Cadastro de técnico/PSO (sem login/senha)
+// Cadastro de técnico/PSO/ATA/PRP/SPOT (sem login/senha)
 const workerSchema = Joi.object({
   name: Joi.string().required(),
   phone: Joi.string().allow('', null),
 
-  // cargo: apenas Técnico/Tecnico ou PSO
+  // cargo
   roleId: Joi.number().required(),
   managerId: Joi.number().allow(null), // gestor opcional
+
+  // ✅ novo
+  estoqueAvancado: Joi.boolean().default(false),
 
   vendorCode: Joi.string().allow('', null),
   serviceAreaCode: Joi.string().allow('', null),
@@ -68,11 +104,14 @@ const updateSchema = Joi.object({
   name: Joi.string(),
   email: Joi.string().email(),
   password: Joi.string().min(6),
-  sex: Joi.string().valid('M','F','O'),
+  sex: Joi.string().valid('M', 'F', 'O'),
   roleId: Joi.number(),
   managerId: Joi.number().allow(null),
   locationId: Joi.number().allow(null),
   isActive: Joi.boolean(),
+
+  // ✅ novo
+  estoqueAvancado: Joi.boolean(),
 
   // extras cadastrais
   phone: Joi.string().allow('', null),
@@ -113,8 +152,14 @@ const addressSchema = Joi.object({
 function buildAddressString(v) {
   return [
     `${v.addressStreet || ''} ${v.addressNumber || ''}`.trim(),
-    v.addressDistrict, v.addressCity, v.addressState, v.addressZip, v.addressCountry || 'Brasil',
-  ].filter(Boolean).join(', ');
+    v.addressDistrict,
+    v.addressCity,
+    v.addressState,
+    v.addressZip,
+    v.addressCountry || 'Brasil',
+  ]
+    .filter(Boolean)
+    .join(', ');
 }
 
 async function geocodeNominatim(query) {
@@ -176,7 +221,7 @@ async function create(req, res) {
   return created(res, user);
 }
 
-// Cria TÉCNICO/PSO (SEM login/senha)
+// Cria TÉCNICO/PSO/ATA/PRP/SPOT (SEM login/senha)
 async function createWorker(req, res) {
   const { error, value } = workerSchema.validate(req.body, { stripUnknown: true });
   if (error) return bad(res, error.message);
@@ -184,11 +229,9 @@ async function createWorker(req, res) {
   const role = await Role.findByPk(value.roleId);
   if (!role) return bad(res, 'Cargo inválido');
 
-  // normaliza: aceita "Técnico", "Tecnico" ou "PSO"
-  const norm = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-  const rname = norm(role.name);
-  if (!['tecnico', 'pso'].includes(rname)) {
-    return bad(res, 'Este endpoint aceita apenas Técnico ou PSO');
+  const rname = normRoleName(role.name);
+  if (!WORKER_ALLOWED_ROLES.has(rname)) {
+    return bad(res, 'Este endpoint aceita apenas Técnico, PSO, ATA,PRP ou SPOT');
   }
 
   // valida gestor, se enviado
@@ -204,6 +247,10 @@ async function createWorker(req, res) {
     roleId: value.roleId,
     managerId,
     phone: value.phone || null,
+
+    // ✅ novo
+    estoqueAvancado: value.estoqueAvancado ?? false,
+
     vendorCode: value.vendorCode || null,
     serviceAreaCode: value.serviceAreaCode || null,
     serviceAreaName: value.serviceAreaName || null,
@@ -256,69 +303,8 @@ async function buildAcimaChain(userInstance) {
     acima.push(mapPerson(gestor));
     cursor = gestor;
   }
-  return acima; // ordem: gestor imediato -> topo
+  return acima;
 }
-
-async function buildAbaixoList(userId, deep = false) {
-  const diretos = await User.findAll({
-    where: { managerId: userId },
-    attributes: ['id', 'name', 'avatarUrl'],
-    include: [{ model: Role, as: 'role', attributes: ['name'] }],
-    order: [['name', 'ASC']],
-  });
-
-  if (!deep) return diretos.map(mapPerson);
-
-  const fila = [...diretos];
-  const resultado = [];
-
-  while (fila.length) {
-    const atual = fila.shift();
-    resultado.push(mapPerson(atual));
-
-    const filhos = await User.findAll({
-      where: { managerId: atual.id },
-      attributes: ['id', 'name', 'avatarUrl'],
-      include: [{ model: Role, as: 'role', attributes: ['name'] }],
-      order: [['name', 'ASC']],
-    });
-    fila.push(...filhos);
-  }
-
-  return resultado;
-}
-
-async function getStructure(req, res) {
-  try {
-    const { id } = req.params;
-    const deep = ['1', 'true', 'yes'].includes(String(req.query.deep || '').toLowerCase());
-    const depth = Number(req.query.depth ?? (deep ? 99 : 1)); // deep sem depth => sem limite
-
-    const user = await User.findByPk(id, {
-      attributes: ['id', 'name', 'managerId', 'isActive', 'avatarUrl'],
-      include: [{ model: Role, as: 'role', attributes: ['name'] }],
-    });
-    if (!user) return notFound(res, 'Usuário não encontrado');
-
-    const [acima, tree] = await Promise.all([
-      buildAcimaChain(user),
-      buildTree(user.id, depth),
-    ]);
-
-    // lista achatada (compatível com seu front atual)
-    const abaixo = flattenTree(tree.children);
-
-    return ok(res, {
-      acima,
-      atual: mapPerson(user),
-      abaixo,     // lista "flat" como você já usa
-      tree,       // ✅ NOVO: árvore para organograma real
-    });
-  } catch (err) {
-    return bad(res, err.message || 'Erro ao montar estrutura');
-  }
-}
-
 
 /* ======================
    ===== CRUD / Utils ===
@@ -510,6 +496,10 @@ async function listMyTeam(req, res) {
 
   return ok(res, result);
 }
+
+/**
+ * ✅ Lista "prestadores" (Técnico/PSO/ATA/PRP/SPOT)
+ */
 async function listTechnicians(req, res) {
   const activeOnly = String(req.query.activeOnly ?? '1') !== '0';
   const q = String(req.query.q || '').trim();
@@ -521,12 +511,11 @@ async function listTechnicians(req, res) {
     whereUser.name = { [Op.like]: `%${q}%` };
   }
 
-  // normaliza nome do role sem acento
-  const roleNames = ['TECNICO', 'TÉCNICO', 'PSO'];
+  const roleNames = ['TECNICO', 'TÉCNICO', 'PSO', 'ATA', 'PRP', 'SPOT'];
 
   const rows = await User.findAll({
     where: whereUser,
-    attributes: ['id', 'name', 'avatarUrl', 'managerId', 'isActive'],
+    attributes: ['id', 'name', 'avatarUrl', 'managerId', 'isActive', 'estoqueAvancado'],
     include: [
       {
         model: Role,
@@ -537,11 +526,11 @@ async function listTechnicians(req, res) {
             { name: { [Op.in]: roleNames } },
             { name: { [Op.like]: '%Tecnico%' } },
             { name: { [Op.like]: '%Técnico%' } },
-            { name: 'PSO' },
+            { name: { [Op.like]: '%PRP%' } },
           ],
         },
         required: true,
-      },''
+      },
     ],
     order: [['name', 'ASC']],
   });
@@ -552,6 +541,7 @@ async function listTechnicians(req, res) {
     avatarUrl: u.avatarUrl || null,
     managerId: u.managerId ?? null,
     isActive: u.isActive !== false,
+    estoqueAvancado: !!u.estoqueAvancado,
     role: u.role ? { id: u.role.id, name: u.role.name, level: u.role.level } : null,
   })));
 }
@@ -568,17 +558,20 @@ async function mapTechs(req, res) {
   // quais grupos incluir
   const includeTech = String(req.query.includeTech ?? '1') !== '0';
   const includePSO  = String(req.query.includePSO ?? '1') !== '0';
+  const includeATA  = String(req.query.includeATA ?? '1') !== '0';
+  const includeSpot = String(req.query.includeSPOT ?? '1') !== '0';
+  const includePRP= String(req.query.includePRP ?? '1') !== '0';
 
-  // carrega todo mundo de uma vez (leve)
+  // carrega todo mundo de uma vez
   const users = await User.findAll({
-    attributes: ['id','name','email','managerId','isActive','lat','lng'],
+    attributes: ['id','name','email','managerId','isActive','lat','lng','estoqueAvancado'],
     include: [{ model: Role, as: 'role', attributes: ['id','name','level'] }],
     order: [['name','ASC']],
   });
 
   const byId = new Map(users.map(u => [u.id, u]));
 
-  // Se foi informado supervisorId, criamos o conjunto de IDs do "downline" (subárvore) dele
+  // downline do supervisor
   let allowedDownline = null;
   if (supervisorId) {
     allowedDownline = new Set();
@@ -594,7 +587,6 @@ async function mapTechs(req, res) {
     }
   }
 
-  // helpers pra subir na cadeia e achar primeiro com minLevel (2=Supervisor, 3=Coordenador)
   function findUpstream(user, minLevel) {
     let cur = user;
     while (cur && cur.managerId) {
@@ -606,31 +598,30 @@ async function mapTechs(req, res) {
     return null;
   }
 
-  // classifica "tipo" para separar no front
-  function roleKind(u) {
-    const name = (u.role?.name || '').toUpperCase();
-    if (name === 'PSO') return 'PSO';
-    if ((u.role?.level || 0) === 1) return 'TECH';
-    return 'OTHER';
-  }
-
   const items = [];
   for (const u of users) {
     if (activeOnly && !u.isActive) continue;
     if (onlyGeocoded && !(u.lat != null && u.lng != null)) continue;
 
-    const kind = roleKind(u);
-    if (kind === 'TECH' && !includeTech) continue;
-    if (kind === 'PSO'  && !includePSO)  continue;
-    if (!(kind === 'TECH' || kind === 'PSO')) continue;
+    const kind = roleKindFromRoleName(u.role?.name);
 
-    // restringe ao downline do supervisor (se passado)
+    // toggles por tipo
+    if (kind === 'TECH' && !includeTech) continue;
+    if (kind === 'PSO' && !includePSO) continue;
+    if (kind === 'ATA' && !includeATA) continue;
+    if (kind === 'SPOT' && !includeSpot) continue;
+    if (kind === 'PRP' && !includePRPh) continue;
+
+    // somente os tipos permitidos
+    const allowedKinds = new Set(['TECH', 'PSO', 'ATA', 'SPOT', 'PRP']);
+    if (!allowedKinds.has(kind)) continue;
+
+    // restringe ao downline do supervisor
     if (allowedDownline && !allowedDownline.has(u.id)) continue;
 
     const supervisor = findUpstream(u, 3);
     const coordinator = findUpstream(u, 4);
 
-    // filtrar por coordenador específico, se pedido
     if (coordinatorId && (!coordinator || coordinator.id !== coordinatorId)) continue;
 
     items.push({
@@ -640,9 +631,10 @@ async function mapTechs(req, res) {
       role: u.role ? { id: u.role.id, name: u.role.name, level: u.role.level } : null,
       lat: u.lat,
       lng: u.lng,
+      estoqueAvancado: !!u.estoqueAvancado,
       supervisor: supervisor ? { id: supervisor.id, name: supervisor.name } : null,
       coordinator: coordinator ? { id: coordinator.id, name: coordinator.name } : null,
-      kind, // 'TECH' | 'PSO'
+      kind, // 'TECH' | 'PSO' | 'ATA' | 'PRP' | 'SPOT'
     });
   }
 
@@ -664,6 +656,70 @@ async function mapTechs(req, res) {
 
   return ok(res, { items, supervisors, coordinators });
 }
+async function getStructure(req, res) {
+  try {
+    const { id } = req.params;
+    const deep = ['1', 'true', 'yes'].includes(String(req.query.deep || '').toLowerCase());
+
+    const user = await User.findByPk(id, {
+      attributes: ['id', 'name', 'managerId', 'isActive', 'avatarUrl'],
+      include: [{ model: Role, as: 'role', attributes: ['name'] }],
+    });
+    if (!user) return notFound(res, 'Usuário não encontrado');
+
+    // acima
+    const acima = await buildAcimaChain(user);
+
+    // abaixo
+    const users = await User.findAll({
+      attributes: ['id', 'name', 'email', 'managerId', 'isActive', 'avatarUrl'],
+      include: [{ model: Role, as: 'role', attributes: ['id', 'name', 'level'] }],
+      order: [['name', 'ASC']],
+    });
+
+    const byMgr = new Map();
+    for (const u of users) {
+      const key = u.managerId ?? 0;
+      if (!byMgr.has(key)) byMgr.set(key, []);
+      byMgr.get(key).push(u);
+    }
+
+    const mapPersonLocal = (u) => ({
+      id: u.id,
+      nome: u.name,
+      cargo: u.role?.name || '—',
+      avatarUrl: u.avatarUrl || null,
+    });
+
+    let abaixo = [];
+
+    if (!deep) {
+      const diretos = byMgr.get(user.id) || [];
+      abaixo = diretos.map(mapPersonLocal);
+    } else {
+      const stack = [...(byMgr.get(user.id) || [])];
+      const seen = new Set();
+
+      while (stack.length) {
+        const cur = stack.shift();
+        if (!cur || seen.has(cur.id)) continue;
+        seen.add(cur.id);
+        abaixo.push(mapPersonLocal(cur));
+
+        const filhos = byMgr.get(cur.id) || [];
+        stack.push(...filhos);
+      }
+    }
+
+    return ok(res, {
+      acima,
+      atual: mapPersonLocal(user),
+      abaixo,
+    });
+  } catch (err) {
+    return bad(res, err.message || 'Erro ao montar estrutura');
+  }
+}
 
 module.exports = {
   // CRUD
@@ -674,14 +730,15 @@ module.exports = {
   uploadAvatar,
   updateAddress,
 
-  // Técnicos/PSO
+  // Técnicos/PSO/Prestadores
   createWorker,
   mapTechs,
   listTechnicians,
+
   // Estrutura
   listAdjustable,
   listMyTeam,
-  getStructure,
+  getStructure, 
 
   // CEP
   cepLookup,

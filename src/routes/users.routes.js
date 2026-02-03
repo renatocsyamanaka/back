@@ -65,7 +65,7 @@ router.get('/cep', auth(), ctrl.cepLookup);
  * @swagger
  * /api/users/workers:
  *   post:
- *     summary: "Cadastra Técnico ou PSO (sem login/senha)"
+ *     summary: "Cadastra Técnico, PSO, ATA, PRP ou SPOT (sem login/senha)"
  *     tags: [Users]
  *     security: [ { bearerAuth: [] } ]
  *     requestBody:
@@ -78,7 +78,8 @@ router.get('/cep', auth(), ctrl.cepLookup);
  *             properties:
  *               name: { type: string }
  *               phone: { type: string, nullable: true }
- *               roleId: { type: integer, description: "ID do cargo Técnico ou PSO" }
+ *               roleId: { type: integer, description: "ID do cargo (Técnico/PSO/ATA/PRP/SPOT)" }
+ *               estoqueAvancado: { type: boolean, description: "Se pertence ao Estoque Avançado", default: false }
  *               vendorCode: { type: string, nullable: true }
  *               serviceAreaCode: { type: string, nullable: true }
  *               serviceAreaName: { type: string, nullable: true }

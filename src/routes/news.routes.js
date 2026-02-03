@@ -1,36 +1,100 @@
 const router = require('express').Router();
-const auth = require('../middleware/auth');        // precisa popular req.user
-const requireLevel = require('../middleware/rbac'); // req.user.role.level
+const auth = require('../middleware/auth');
+const requireLevel = require('../middleware/rbac');
 const ctrl = require('../controllers/newsController');
 
-let { uploadNews } = (() => { try { return require('../config/upload'); } catch { return {}; } })();
-if (!uploadNews || typeof uploadNews.single !== 'function') {
-  const multer = require('multer');
-  const path = require('path');
-  const fs = require('fs');
-  const dir = path.resolve(__dirname, '..', '..', 'uploads', 'news');
-  fs.mkdirSync(dir, { recursive: true });
-  const storage = multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, dir),
-    filename: (_req, file, cb) => {
-      const ext = (file.originalname && file.originalname.includes('.'))
-        ? '.' + file.originalname.split('.').pop().toLowerCase() : '';
-      cb(null, `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}${ext}`);
-    },
-  });
-  uploadNews = multer({ storage });
+// Upload (opcional) para imagem da notícia
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+function ensureDir(p) {
+  if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
 
-// Criar (Supervisor+). Campo do arquivo: "image"
-router.post('/', auth(), requireLevel(2), uploadNews.single('image'), ctrl.create);
+const storage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const dir = path.join(process.cwd(), 'uploads', 'news');
+    ensureDir(dir);
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '');
+    const safe = `${Date.now()}-${Math.random().toString(16).slice(2)}${ext}`;
+    cb(null, safe);
+  },
+});
 
-// Listar feed
+const upload = multer({
+  storage,
+  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
+});
+
+/**
+ * @swagger
+ * tags:
+ *   name: News
+ *   description: Notícias do sistema
+ */
+
+/**
+ * @swagger
+ * /api/news:
+ *   get:
+ *     summary: Listar notícias
+ *     tags: [News]
+ *     security: [{ bearerAuth: [] }]
+ */
 router.get('/', auth(), ctrl.list);
 
-// Marcar como lida
-router.post('/:id/read', auth(), ctrl.markRead);
+/**
+ * @swagger
+ * /api/news/{id}:
+ *   get:
+ *     summary: Detalhar notícia
+ *     tags: [News]
+ *     security: [{ bearerAuth: [] }]
+ */
+router.get('/:id', auth(), ctrl.getById);
 
-// Remover (Gerente+)
-router.delete('/:id', auth(), requireLevel(4), ctrl.remove);
+/**
+ * @swagger
+ * /api/news:
+ *   post:
+ *     summary: Criar notícia
+ *     tags: [News]
+ *     security: [{ bearerAuth: [] }]
+ */
+router.post('/', auth(), requireLevel(2), ctrl.create);
+
+/**
+ * @swagger
+ * /api/news/{id}:
+ *   patch:
+ *     summary: Editar notícia
+ *     tags: [News]
+ *     security: [{ bearerAuth: [] }]
+ */
+router.patch('/:id', auth(), requireLevel(2), ctrl.update);
+
+/**
+ * @swagger
+ * /api/news/{id}:
+ *   delete:
+ *     summary: Remover notícia
+ *     tags: [News]
+ *     security: [{ bearerAuth: [] }]
+ */
+router.delete('/:id', auth(), requireLevel(2), ctrl.remove);
+
+/**
+ * @swagger
+ * /api/news/{id}/image:
+ *   post:
+ *     summary: Upload de imagem da notícia
+ *     tags: [News]
+ *     security: [{ bearerAuth: [] }]
+ */
+router.post('/:id/image', auth(), requireLevel(2), upload.single('image'), ctrl.uploadImage);
 
 module.exports = router;

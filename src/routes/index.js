@@ -39,6 +39,7 @@ mount('/org',         './org.routes');
 mount('/locations',   './locations.routes');
 mount('/clients',     './clients.routes');
 mount('/techtypes',   './techtypes.routes');
+mount('/tech-types',  './techtypes.routes'); 
 mount('/needs',       './needs.routes');
 mount('/geocode',       './geocode.routes');
 mount('/assignments', './assignments.routes');

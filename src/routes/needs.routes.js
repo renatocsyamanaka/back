@@ -13,7 +13,7 @@ const { Need, NeedAttachment } = require('../models');
  * @swagger
  * tags:
  *   name: Needs
- *   description: Requisições de técnicos por localidade
+ *   description: Requisições de técnicos por localidade (inclui captação/homologação e anexos)
  */
 
 /** =========================
@@ -46,22 +46,56 @@ const upload = multer({
  * @swagger
  * /api/needs:
  *   post:
- *     summary: Solicita um técnico para uma localidade
- *     description: Cria uma requisição (status inicial OPEN) vinculada a um local. Você pode informar qualquer nome para o técnico solicitado.
+ *     summary: Cria uma requisição de técnico
  *     tags: [Needs]
- *     security: [ { bearerAuth: [] } ]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [requestedLocationText]
+ *             properties:
+ *               requestedLocationText: { type: string, example: "Av. Paulista, 1000 - São Paulo/SP" }
+ *               requestedCity: { type: string, nullable: true }
+ *               requestedState: { type: string, nullable: true }
+ *               requestedCep: { type: string, nullable: true }
+ *               requestedLat: { type: number, nullable: true }
+ *               requestedLng: { type: number, nullable: true }
+ *               requestedName: { type: string, example: "Técnico a definir" }
+ *               techTypeId: { type: number, nullable: true }
+ *               notes: { type: string, nullable: true }
+ *   get:
+ *     summary: Lista requisições
+ *     tags: [Needs]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, example: "OPEN" }
+ *       - in: query
+ *         name: techTypeId
+ *         schema: { type: number }
+ *       - in: query
+ *         name: requesterId
+ *         schema: { type: number }
+ *       - in: query
+ *         name: q
+ *         schema: { type: string }
  */
 router.post('/', auth(), requireLevel(2), ctrl.create);
+router.get('/', auth(), ctrl.list);
 
 /**
  * @swagger
- * /api/needs:
+ * /api/needs/requesters:
  *   get:
- *     summary: Lista requisições de técnicos
+ *     summary: Lista solicitantes (para preencher o select do filtro)
  *     tags: [Needs]
- *     security: [ { bearerAuth: [] } ]
+ *     security: [{ bearerAuth: [] }]
  */
-router.get('/', auth(), ctrl.list);
+router.get('/requesters', auth(), ctrl.requesters);
 
 /**
  * @swagger
@@ -69,7 +103,23 @@ router.get('/', auth(), ctrl.list);
  *   patch:
  *     summary: Atualiza status da requisição
  *     tags: [Needs]
- *     security: [ { bearerAuth: [] } ]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: number }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [OPEN, IN_PROGRESS, FULFILLED, CANCELLED]
  */
 router.patch('/:id/status', auth(), requireLevel(2), ctrl.updateStatus);
 
@@ -77,24 +127,48 @@ router.patch('/:id/status', auth(), requireLevel(2), ctrl.updateStatus);
  * @swagger
  * /api/needs/{id}/provider:
  *   patch:
- *     summary: Atualiza dados do prestador em captação/homologação
+ *     summary: Atualiza dados do prestador (captação/homologação)
  *     tags: [Needs]
- *     security: [ { bearerAuth: [] } ]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: number }
  */
 router.patch('/:id/provider', auth(), requireLevel(2), ctrl.updateProvider);
 
-// ✅ editar endereço
-router.patch('/:id/address', auth(), ctrl.updateAddress);
-
-// ✅ opcional pro select do solicitante
-router.get('/requesters', auth(), ctrl.requesters);
+/**
+ * @swagger
+ * /api/needs/{id}/address:
+ *   patch:
+ *     summary: Atualiza endereço e coordenadas (lat/lng)
+ *     tags: [Needs]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: number }
+ */
+router.patch('/:id/address', auth(), requireLevel(2), ctrl.updateAddress);
 
 /** =========================
  *  ✅ ANEXOS
  *  ========================= */
 
 /**
- * GET /api/needs/:id/attachments
+ * @swagger
+ * /api/needs/{id}/attachments:
+ *   get:
+ *     summary: Lista anexos da Need
+ *     tags: [Needs]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: number }
  */
 router.get('/:id/attachments', auth(), async (req, res) => {
   try {
@@ -111,10 +185,32 @@ router.get('/:id/attachments', auth(), async (req, res) => {
 });
 
 /**
- * POST /api/needs/:id/attachments
- * multipart/form-data:
- * - file: arquivo
- * - kind: CONTRATO | DOCUMENTO | FOTO | OUTRO
+ * @swagger
+ * /api/needs/{id}/attachments:
+ *   post:
+ *     summary: Anexa um arquivo na Need
+ *     tags: [Needs]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: number }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [file]
+ *             properties:
+ *               kind:
+ *                 type: string
+ *                 enum: [CONTRATO, DOCUMENTO, FOTO, OUTRO]
+ *                 example: DOCUMENTO
+ *               file:
+ *                 type: string
+ *                 format: binary
  */
 router.post('/:id/attachments', auth(), requireLevel(2), upload.single('file'), async (req, res) => {
   try {
@@ -129,8 +225,8 @@ router.post('/:id/attachments', auth(), requireLevel(2), upload.single('file'), 
     const allowed = ['CONTRATO', 'DOCUMENTO', 'FOTO', 'OUTRO'];
     if (!allowed.includes(kind)) return res.status(400).json({ error: 'kind inválido' });
 
-    const BASE_URL = process.env.BASE_URL || 'https://api.projetos-rc.online';
-    const url = `${BASE_URL}/uploads/needs/${needId}/${req.file.filename}`;
+    // ✅ melhor guardar URL RELATIVA (facilita prod/homolog sem BASE_URL)
+    const url = `/uploads/needs/${needId}/${req.file.filename}`;
 
     const row = await NeedAttachment.create({
       needId,
@@ -140,7 +236,7 @@ router.post('/:id/attachments', auth(), requireLevel(2), upload.single('file'), 
       mimeType: req.file.mimetype,
       size: req.file.size,
       url,
-      uploadedById: req.user?.id || null, // se seu auth preenche req.user
+      uploadedById: req.user?.id || null,
     });
 
     return res.json(row);
@@ -151,7 +247,21 @@ router.post('/:id/attachments', auth(), requireLevel(2), upload.single('file'), 
 });
 
 /**
- * DELETE /api/needs/:id/attachments/:attachmentId
+ * @swagger
+ * /api/needs/{id}/attachments/{attachmentId}:
+ *   delete:
+ *     summary: Remove um anexo da Need
+ *     tags: [Needs]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: number }
+ *       - in: path
+ *         name: attachmentId
+ *         required: true
+ *         schema: { type: number }
  */
 router.delete('/:id/attachments/:attachmentId', auth(), requireLevel(2), async (req, res) => {
   try {
@@ -161,20 +271,11 @@ router.delete('/:id/attachments/:attachmentId', auth(), requireLevel(2), async (
     const row = await NeedAttachment.findOne({ where: { id: attachmentId, needId } });
     if (!row) return res.status(404).json({ error: 'Anexo não encontrado' });
 
-    // ✅ remove arquivo do disco (best effort)
+    // remove do disco (best effort)
     try {
-      // row.url exemplo: http://localhost:3000/uploads/needs/10/arquivo.png
-      // precisamos extrair só o pathname: /uploads/needs/10/arquivo.png
-      const pathname = row.url
-        ? new URL(row.url).pathname
-        : `/uploads/needs/${needId}/${row.fileName}`;
-
-      // pathname -> uploads/needs/10/arquivo.png
+      const pathname = row.url || `/uploads/needs/${needId}/${row.fileName}`;
       const rel = pathname.replace(/^\/+/, '');
-
-      // caminho físico real
       const filePath = path.resolve(process.cwd(), rel);
-
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     } catch (err) {
       console.warn('[needs.attachments.delete] falha ao apagar arquivo:', err?.message);
