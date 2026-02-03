@@ -8,7 +8,7 @@ const { Op } = require('sequelize');
 /* ======================
    ====== CONSTANTES =====
    ====================== */
-const baseUrl = process.env.BASE_URL || 'https://api.projetos-rc.online/api';
+const baseUrl = process.env.BASE_URL || 'https://api.projetos-rc.online';
 
 const defaultIncludes = [
   { model: Role, as: 'role', attributes: ['id', 'name', 'level'] },
