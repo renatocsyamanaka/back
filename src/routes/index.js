@@ -41,6 +41,7 @@ mount('/clients',     './clients.routes');
 mount('/techtypes',   './techtypes.routes');
 mount('/tech-types',  './techtypes.routes'); 
 mount('/needs',       './needs.routes');
+mount('/part-requests', './partRequestRoutes');
 mount('/geocode',       './geocode.routes');
 mount('/assignments', './assignments.routes');
 mount('/overtime',    './overtime.routes');
@@ -49,5 +50,6 @@ mount('/geocode',     './geocode.routes');
 mount('/tasks',       './tasks.routes');
 mount('/news',       './news.routes');
 mount('/installation-projects',       './installationProjects.routes');
+mount('/parts', './partCatalogRoutes');
 
 module.exports = router;

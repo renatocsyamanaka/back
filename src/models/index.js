@@ -12,7 +12,7 @@ const OvertimeEntry = require('./OvertimeEntry');
 const TimeOff = require('./TimeOff');
 const Task = require('./Task');
 const TeamMember = require('./TeamMember');
-
+const PartCatalog = require('./PartCatalog');
 const InstallationProject = require('./InstallationProject');
 const InstallationProjectItem = require('./InstallationProjectItem');
 const InstallationProjectProgress = require('./InstallationProjectProgress');
@@ -63,6 +63,64 @@ NeedAttachment.belongsTo(Need, { as: 'need', foreignKey: 'needId' });
 NeedAttachment.belongsTo(User, { as: 'uploadedBy', foreignKey: 'uploadedById' });
 User.hasMany(NeedAttachment, { as: 'needAttachments', foreignKey: 'uploadedById' });
 
+// SOlicitação Peças
+const PartRequest = require('./PartRequest');
+const PartRequestItem = require('./PartRequestItem');
+const PartRequestHistory = require('./PartRequestHistory');
+
+// ----------------- Part Requests -----------------
+PartRequest.hasMany(PartRequestItem, {
+  as: 'items',
+  foreignKey: 'partRequestId',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE',
+});
+PartRequestItem.belongsTo(PartRequest, {
+  as: 'request',
+  foreignKey: 'partRequestId',
+});
+
+PartRequest.hasMany(PartRequestHistory, {
+  as: 'history',
+  foreignKey: 'partRequestId',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE',
+});
+PartRequestHistory.belongsTo(PartRequest, {
+  as: 'request',
+  foreignKey: 'partRequestId',
+});
+
+PartRequestItem.hasMany(PartRequestHistory, {
+  as: 'history',
+  foreignKey: 'partRequestItemId',
+  onDelete: 'SET NULL',
+  onUpdate: 'CASCADE',
+});
+PartRequestHistory.belongsTo(PartRequestItem, {
+  as: 'item',
+  foreignKey: 'partRequestItemId',
+});
+
+PartRequest.belongsTo(User, {
+  as: 'requesterUser',
+  foreignKey: 'requesterUserId',
+});
+PartRequest.belongsTo(User, {
+  as: 'manager',
+  foreignKey: 'managerId',
+});
+
+PartRequestHistory.belongsTo(User, {
+  as: 'performedByUser',
+  foreignKey: 'performedByUserId',
+});
+
+PartRequest.belongsTo(Client, {
+  as: 'client',
+  foreignKey: 'clientId',
+});
+
 // ----------------- News -----------------
 News.belongsTo(User, {
   as: 'creator',
@@ -74,6 +132,13 @@ News.belongsTo(User, {
 NewsRead.belongsTo(News, { foreignKey: 'newsId' });
 NewsRead.belongsTo(User, { foreignKey: 'userId' });
 
+
+// Vinculo Parte item
+
+PartCatalog.belongsTo(User, {
+  as: 'createdBy',
+  foreignKey: 'createdById',
+});
 // ----------------- Tasks -----------------
 User.hasMany(Task, { as: 'assignedTasks', foreignKey: 'assignedToId' });
 Task.belongsTo(User, { as: 'assignee', foreignKey: 'assignedToId' });
@@ -134,4 +199,8 @@ module.exports = {
   InstallationProjectItem,
   InstallationProjectProgress,
   InstallationProjectProgressVehicle,
+  PartRequest,
+  PartRequestItem,
+  PartRequestHistory,
+  PartCatalog,
 };

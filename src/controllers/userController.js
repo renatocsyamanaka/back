@@ -23,14 +23,13 @@ const defaultIncludes = [
 function normRoleName(s) {
   return (s || '')
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // remove acentos
-    .replace(/[_-]+/g, ' ')          // _ e - viram espaço
-    .replace(/\s+/g, ' ')           // normaliza espaços
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
 }
 
-// ✅ Cargos permitidos no endpoint /workers (sem login)
 const WORKER_ALLOWED_ROLES = new Set([
   'tecnico',
   'pso',
@@ -38,6 +37,13 @@ const WORKER_ALLOWED_ROLES = new Set([
   'prp',
   'spot',
 ]);
+
+const VALID_TIPO_ATENDIMENTO = ['FX', 'VL', 'FV'];
+
+function normalizeTipoAtendimento(value) {
+  if (value === undefined || value === null || value === '') return null;
+  return String(value).trim().toUpperCase();
+}
 
 function roleKindFromRoleName(roleName) {
   const r = normRoleName(roleName);
@@ -49,27 +55,38 @@ function roleKindFromRoleName(roleName) {
   return 'OTHER';
 }
 
+function getTipoAtendimentoDescricao(tipoAtendimento) {
+  switch (tipoAtendimento) {
+    case 'FX':
+      return 'Fixo';
+    case 'VL':
+      return 'Volante';
+    case 'FV':
+      return 'Fixo e Volante';
+    default:
+      return null;
+  }
+}
+
 /* ======================
    ====== SCHEMAS =======
    ====================== */
 
-// Cadastro de técnico/PSO/ATA/PRP/SPOT (sem login/senha)
 const workerSchema = Joi.object({
   name: Joi.string().required(),
   phone: Joi.string().allow('', null),
 
-  // cargo
   roleId: Joi.number().required(),
-  managerId: Joi.number().allow(null), // gestor opcional
+  managerId: Joi.number().allow(null),
 
-  // ✅ novo
   estoqueAvancado: Joi.boolean().default(false),
 
   vendorCode: Joi.string().allow('', null),
   serviceAreaCode: Joi.string().allow('', null),
   serviceAreaName: Joi.string().allow('', null),
 
-  // endereço obrigatório
+  tipoAtendimento: Joi.string().valid('FX', 'VL', 'FV').allow('', null),
+
   addressStreet: Joi.string().required(),
   addressNumber: Joi.string().allow(''),
   addressComplement: Joi.string().allow(''),
@@ -79,12 +96,10 @@ const workerSchema = Joi.object({
   addressZip: Joi.string().allow(''),
   addressCountry: Joi.string().default('Brasil'),
 
-  // coordenadas obrigatórias
   lat: Joi.number().required(),
   lng: Joi.number().required(),
 });
 
-// Cadastro de usuário com login
 const userSchema = Joi.object({
   name: Joi.string().required(),
   email: Joi.string().email().required(),
@@ -97,12 +112,12 @@ const userSchema = Joi.object({
   vendorCode: Joi.string().allow('', null),
   serviceAreaCode: Joi.string().allow('', null),
   serviceAreaName: Joi.string().allow('', null),
+  tipoAtendimento: Joi.string().valid('FX', 'VL', 'FV').allow('', null),
 });
 
-// Atualização
 const updateSchema = Joi.object({
   name: Joi.string(),
-  email: Joi.string().email(),
+  email: Joi.string().email().allow('', null),
   password: Joi.string().min(6),
   sex: Joi.string().valid('M', 'F', 'O'),
   roleId: Joi.number(),
@@ -110,16 +125,14 @@ const updateSchema = Joi.object({
   locationId: Joi.number().allow(null),
   isActive: Joi.boolean(),
 
-  // ✅ novo
   estoqueAvancado: Joi.boolean(),
 
-  // extras cadastrais
   phone: Joi.string().allow('', null),
   vendorCode: Joi.string().allow('', null),
   serviceAreaCode: Joi.string().allow('', null),
   serviceAreaName: Joi.string().allow('', null),
+  tipoAtendimento: Joi.string().valid('FX', 'VL', 'FV').allow('', null),
 
-  // endereço + coords (opcionais)
   addressStreet: Joi.string().allow('', null),
   addressNumber: Joi.string().allow('', null),
   addressComplement: Joi.string().allow('', null),
@@ -133,7 +146,6 @@ const updateSchema = Joi.object({
   lng: Joi.number().allow(null),
 }).min(1);
 
-// Endereço (para PATCH /address)
 const addressSchema = Joi.object({
   addressStreet: Joi.string().required(),
   addressNumber: Joi.string().allow(''),
@@ -172,7 +184,6 @@ async function geocodeNominatim(query) {
   return { lat: Number(lat), lng: Number(lon) };
 }
 
-// ViaCEP (autocomplete por CEP)
 async function cepLookup(req, res) {
   try {
     const cepRaw = String(req.query.cep || '').replace(/\D/g, '');
@@ -200,9 +211,16 @@ async function cepLookup(req, res) {
    ===== Controllers ====
    ====================== */
 
-// Cria usuário COM login
 async function create(req, res) {
-  const { error, value } = userSchema.validate(req.body, { stripUnknown: true });
+  const body = {
+    ...req.body,
+    tipoAtendimento:
+      req.body.tipoAtendimento !== undefined
+        ? normalizeTipoAtendimento(req.body.tipoAtendimento)
+        : normalizeTipoAtendimento(req.body.tipo_atendimento),
+  };
+
+  const { error, value } = userSchema.validate(body, { stripUnknown: true });
   if (error) return bad(res, error.message);
 
   const exists = await User.findOne({ where: { email: value.email } });
@@ -210,7 +228,7 @@ async function create(req, res) {
 
   const createdUser = await User.create({
     ...value,
-    password_hash: value.password, // hook beforeCreate faz hash se presente
+    password_hash: value.password,
     loginEnabled: true,
   });
 
@@ -218,12 +236,23 @@ async function create(req, res) {
     attributes: { exclude: ['password_hash'] },
     include: defaultIncludes,
   });
-  return created(res, user);
+
+  const payload = user.toJSON();
+  payload.tipoAtendimentoDescricao = getTipoAtendimentoDescricao(payload.tipoAtendimento);
+
+  return created(res, payload);
 }
 
-// Cria TÉCNICO/PSO/ATA/PRP/SPOT (SEM login/senha)
 async function createWorker(req, res) {
-  const { error, value } = workerSchema.validate(req.body, { stripUnknown: true });
+  const body = {
+    ...req.body,
+    tipoAtendimento:
+      req.body.tipoAtendimento !== undefined
+        ? normalizeTipoAtendimento(req.body.tipoAtendimento)
+        : normalizeTipoAtendimento(req.body.tipo_atendimento),
+  };
+
+  const { error, value } = workerSchema.validate(body, { stripUnknown: true });
   if (error) return bad(res, error.message);
 
   const role = await Role.findByPk(value.roleId);
@@ -234,7 +263,6 @@ async function createWorker(req, res) {
     return bad(res, 'Este endpoint aceita apenas Técnico, PSO, ATA,PRP ou SPOT');
   }
 
-  // valida gestor, se enviado
   let managerId = null;
   if (value.managerId != null) {
     const mgr = await User.findByPk(value.managerId);
@@ -248,13 +276,14 @@ async function createWorker(req, res) {
     managerId,
     phone: value.phone || null,
 
-    // ✅ novo
     estoqueAvancado: value.estoqueAvancado ?? false,
 
     vendorCode: value.vendorCode || null,
     serviceAreaCode: value.serviceAreaCode || null,
     serviceAreaName: value.serviceAreaName || null,
-    loginEnabled: false, // <- sem e-mail/senha
+    tipoAtendimento: value.tipoAtendimento || null,
+
+    loginEnabled: false,
   });
 
   Object.assign(user, {
@@ -276,7 +305,10 @@ async function createWorker(req, res) {
     include: defaultIncludes,
   });
 
-  return created(res, populated);
+  const payload = populated.toJSON();
+  payload.tipoAtendimentoDescricao = getTipoAtendimentoDescricao(payload.tipoAtendimento);
+
+  return created(res, payload);
 }
 
 /* =========================
@@ -316,7 +348,14 @@ async function list(_req, res) {
     include: defaultIncludes,
     order: [['name', 'ASC']],
   });
-  return ok(res, users);
+
+  const payload = users.map((u) => {
+    const item = u.toJSON();
+    item.tipoAtendimentoDescricao = getTipoAtendimentoDescricao(item.tipoAtendimento);
+    return item;
+  });
+
+  return ok(res, payload);
 }
 
 async function listAdjustable(req, res) {
@@ -330,7 +369,7 @@ async function listAdjustable(req, res) {
     order: [['name', 'ASC']],
   });
 
-  const active = all.filter(u => u.isActive !== false);
+  const active = all.filter((u) => u.isActive !== false);
 
   const childrenByMgr = new Map();
   for (const u of active) {
@@ -350,22 +389,25 @@ async function listAdjustable(req, res) {
       const id = stack.pop();
       const kids = childrenByMgr.get(id) || [];
       for (const k of kids) {
-        if (!ids.has(k.id)) { ids.add(k.id); stack.push(k.id); }
+        if (!ids.has(k.id)) {
+          ids.add(k.id);
+          stack.push(k.id);
+        }
       }
     }
-    result = active.filter(u => ids.has(u.id));
+    result = active.filter((u) => ids.has(u.id));
     if (includeSelf) {
-      const myself = all.find(u => u.id === me.id);
+      const myself = all.find((u) => u.id === me.id);
       if (myself) result.unshift(myself);
     }
   } else {
     if (includeSelf) {
-      const myself = all.find(u => u.id === me.id);
+      const myself = all.find((u) => u.id === me.id);
       if (myself) result = [myself];
     }
   }
 
-  return ok(res, result.map(u => ({ id: u.id, name: u.name })));
+  return ok(res, result.map((u) => ({ id: u.id, name: u.name })));
 }
 
 async function setManager(req, res) {
@@ -389,12 +431,27 @@ async function setManager(req, res) {
     attributes: { exclude: ['password_hash'] },
     include: defaultIncludes,
   });
-  return ok(res, populated);
+
+  const payload = populated.toJSON();
+  payload.tipoAtendimentoDescricao = getTipoAtendimentoDescricao(payload.tipoAtendimento);
+
+  return ok(res, payload);
 }
 
 async function update(req, res) {
   const { id } = req.params;
-  const { error, value } = updateSchema.validate(req.body);
+
+  const body = {
+    ...req.body,
+    tipoAtendimento:
+      req.body.tipoAtendimento !== undefined
+        ? normalizeTipoAtendimento(req.body.tipoAtendimento)
+        : req.body.tipo_atendimento !== undefined
+          ? normalizeTipoAtendimento(req.body.tipo_atendimento)
+          : req.body.tipoAtendimento,
+  };
+
+  const { error, value } = updateSchema.validate(body, { stripUnknown: true });
   if (error) return bad(res, error.message);
 
   const user = await User.findByPk(id);
@@ -404,15 +461,16 @@ async function update(req, res) {
     const clash = await User.findOne({ where: { email: value.email } });
     if (clash) return bad(res, 'E-mail já cadastrado');
   }
-  if (value.managerId === user.id) return bad(res, 'Colaborador não pode ser gestor de si mesmo');
 
-  // senha
+  if (value.managerId === user.id) {
+    return bad(res, 'Colaborador não pode ser gestor de si mesmo');
+  }
+
   if (value.password) {
     user.password_hash = value.password;
     delete value.password;
   }
 
-  // garanta tipo numérico ou null para DECIMAL
   if ('lat' in value) value.lat = value.lat === '' || value.lat === undefined ? null : Number(value.lat);
   if ('lng' in value) value.lng = value.lng === '' || value.lng === undefined ? null : Number(value.lng);
 
@@ -423,7 +481,11 @@ async function update(req, res) {
     attributes: { exclude: ['password_hash'] },
     include: defaultIncludes,
   });
-  return ok(res, populated);
+
+  const payload = populated.toJSON();
+  payload.tipoAtendimentoDescricao = getTipoAtendimentoDescricao(payload.tipoAtendimento);
+
+  return ok(res, payload);
 }
 
 async function uploadAvatar(req, res) {
@@ -451,18 +513,27 @@ async function updateAddress(req, res) {
 
   if (addr.autoGeocode) {
     const query = buildAddressString(addr);
-    try { coords = await geocodeNominatim(query); } catch (_) {}
+    try {
+      coords = await geocodeNominatim(query);
+    } catch (_) {}
   }
 
   Object.assign(user, addr);
-  if (coords) { user.lat = coords.lat; user.lng = coords.lng; }
+  if (coords) {
+    user.lat = coords.lat;
+    user.lng = coords.lng;
+  }
   await user.save();
 
   const populated = await User.findByPk(user.id, {
     attributes: { exclude: ['password_hash'] },
     include: defaultIncludes,
   });
-  return ok(res, populated);
+
+  const payload = populated.toJSON();
+  payload.tipoAtendimentoDescricao = getTipoAtendimentoDescricao(payload.tipoAtendimento);
+
+  return ok(res, payload);
 }
 
 async function listMyTeam(req, res) {
@@ -497,9 +568,6 @@ async function listMyTeam(req, res) {
   return ok(res, result);
 }
 
-/**
- * ✅ Lista "prestadores" (Técnico/PSO/ATA/PRP/SPOT)
- */
 async function listTechnicians(req, res) {
   const activeOnly = String(req.query.activeOnly ?? '1') !== '0';
   const q = String(req.query.q || '').trim();
@@ -515,7 +583,18 @@ async function listTechnicians(req, res) {
 
   const rows = await User.findAll({
     where: whereUser,
-    attributes: ['id', 'name', 'avatarUrl', 'managerId', 'isActive', 'estoqueAvancado'],
+    attributes: [
+      'id',
+      'name',
+      'avatarUrl',
+      'managerId',
+      'isActive',
+      'estoqueAvancado',
+      'vendorCode',
+      'serviceAreaCode',
+      'serviceAreaName',
+      'tipoAtendimento',
+    ],
     include: [
       {
         model: Role,
@@ -535,43 +614,59 @@ async function listTechnicians(req, res) {
     order: [['name', 'ASC']],
   });
 
-  return ok(res, rows.map(u => ({
-    id: u.id,
-    name: u.name,
-    avatarUrl: u.avatarUrl || null,
-    managerId: u.managerId ?? null,
-    isActive: u.isActive !== false,
-    estoqueAvancado: !!u.estoqueAvancado,
-    role: u.role ? { id: u.role.id, name: u.role.name, level: u.role.level } : null,
-  })));
+  return ok(
+    res,
+    rows.map((u) => ({
+      id: u.id,
+      name: u.name,
+      avatarUrl: u.avatarUrl || null,
+      managerId: u.managerId ?? null,
+      isActive: u.isActive !== false,
+      estoqueAvancado: !!u.estoqueAvancado,
+      vendorCode: u.vendorCode ?? null,
+      serviceAreaCode: u.serviceAreaCode ?? null,
+      serviceAreaName: u.serviceAreaName ?? null,
+      tipoAtendimento: u.tipoAtendimento ?? null,
+      tipoAtendimentoDescricao: getTipoAtendimentoDescricao(u.tipoAtendimento),
+      role: u.role ? { id: u.role.id, name: u.role.name, level: u.role.level } : null,
+    }))
+  );
 }
 
 async function mapTechs(req, res) {
-  // flags
   const onlyGeocoded = String(req.query.onlyGeocoded ?? '1') !== '0';
-  const activeOnly   = String(req.query.activeOnly ?? '1') !== '0';
+  const activeOnly = String(req.query.activeOnly ?? '1') !== '0';
 
-  // filtros opcionais
-  const supervisorId   = req.query.supervisorId ? Number(req.query.supervisorId) : undefined;
-  const coordinatorId  = req.query.coordinatorId ? Number(req.query.coordinatorId) : undefined;
+  const supervisorId = req.query.supervisorId ? Number(req.query.supervisorId) : undefined;
+  const coordinatorId = req.query.coordinatorId ? Number(req.query.coordinatorId) : undefined;
 
-  // quais grupos incluir
   const includeTech = String(req.query.includeTech ?? '1') !== '0';
-  const includePSO  = String(req.query.includePSO ?? '1') !== '0';
-  const includeATA  = String(req.query.includeATA ?? '1') !== '0';
+  const includePSO = String(req.query.includePSO ?? '1') !== '0';
+  const includeATA = String(req.query.includeATA ?? '1') !== '0';
   const includeSpot = String(req.query.includeSPOT ?? '1') !== '0';
-  const includePRP= String(req.query.includePRP ?? '1') !== '0';
+  const includePRP = String(req.query.includePRP ?? '1') !== '0';
 
-  // carrega todo mundo de uma vez
   const users = await User.findAll({
-    attributes: ['id','name','email','managerId','isActive','lat','lng','estoqueAvancado'],
-    include: [{ model: Role, as: 'role', attributes: ['id','name','level'] }],
-    order: [['name','ASC']],
+    attributes: [
+      'id',
+      'name',
+      'email',
+      'managerId',
+      'isActive',
+      'lat',
+      'lng',
+      'estoqueAvancado',
+      'vendorCode',
+      'serviceAreaCode',
+      'serviceAreaName',
+      'tipoAtendimento',
+    ],
+    include: [{ model: Role, as: 'role', attributes: ['id', 'name', 'level'] }],
+    order: [['name', 'ASC']],
   });
 
-  const byId = new Map(users.map(u => [u.id, u]));
+  const byId = new Map(users.map((u) => [u.id, u]));
 
-  // downline do supervisor
   let allowedDownline = null;
   if (supervisorId) {
     allowedDownline = new Set();
@@ -605,18 +700,15 @@ async function mapTechs(req, res) {
 
     const kind = roleKindFromRoleName(u.role?.name);
 
-    // toggles por tipo
     if (kind === 'TECH' && !includeTech) continue;
     if (kind === 'PSO' && !includePSO) continue;
     if (kind === 'ATA' && !includeATA) continue;
     if (kind === 'SPOT' && !includeSpot) continue;
-    if (kind === 'PRP' && !includePRPh) continue;
+    if (kind === 'PRP' && !includePRP) continue;
 
-    // somente os tipos permitidos
     const allowedKinds = new Set(['TECH', 'PSO', 'ATA', 'SPOT', 'PRP']);
     if (!allowedKinds.has(kind)) continue;
 
-    // restringe ao downline do supervisor
     if (allowedDownline && !allowedDownline.has(u.id)) continue;
 
     const supervisor = findUpstream(u, 3);
@@ -632,17 +724,22 @@ async function mapTechs(req, res) {
       lat: u.lat,
       lng: u.lng,
       estoqueAvancado: !!u.estoqueAvancado,
+      vendorCode: u.vendorCode ?? null,
+      serviceAreaCode: u.serviceAreaCode ?? null,
+      serviceAreaName: u.serviceAreaName ?? null,
+      tipoAtendimento: u.tipoAtendimento ?? null,
+      tipoAtendimentoDescricao: getTipoAtendimentoDescricao(u.tipoAtendimento),
       supervisor: supervisor ? { id: supervisor.id, name: supervisor.name } : null,
       coordinator: coordinator ? { id: coordinator.id, name: coordinator.name } : null,
-      kind, // 'TECH' | 'PSO' | 'ATA' | 'PRP' | 'SPOT'
+      kind,
     });
   }
 
-  // listas únicas pra popular filtros
   const supervisors = [];
   const supSeen = new Set();
   const coordinators = [];
   const corSeen = new Set();
+
   for (const it of items) {
     if (it.supervisor && !supSeen.has(it.supervisor.id)) {
       supSeen.add(it.supervisor.id);
@@ -656,6 +753,7 @@ async function mapTechs(req, res) {
 
   return ok(res, { items, supervisors, coordinators });
 }
+
 async function getStructure(req, res) {
   try {
     const { id } = req.params;
@@ -667,10 +765,8 @@ async function getStructure(req, res) {
     });
     if (!user) return notFound(res, 'Usuário não encontrado');
 
-    // acima
     const acima = await buildAcimaChain(user);
 
-    // abaixo
     const users = await User.findAll({
       attributes: ['id', 'name', 'email', 'managerId', 'isActive', 'avatarUrl'],
       include: [{ model: Role, as: 'role', attributes: ['id', 'name', 'level'] }],
@@ -722,7 +818,6 @@ async function getStructure(req, res) {
 }
 
 module.exports = {
-  // CRUD
   create,
   list,
   update,
@@ -730,16 +825,13 @@ module.exports = {
   uploadAvatar,
   updateAddress,
 
-  // Técnicos/PSO/Prestadores
   createWorker,
   mapTechs,
   listTechnicians,
 
-  // Estrutura
   listAdjustable,
   listMyTeam,
-  getStructure, 
+  getStructure,
 
-  // CEP
   cepLookup,
 };

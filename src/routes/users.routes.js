@@ -38,6 +38,11 @@ const { uploadAvatar } = require('../config/upload');
  *               vendorCode:      { type: string, nullable: true }
  *               serviceAreaCode: { type: string, nullable: true }
  *               serviceAreaName: { type: string, nullable: true }
+ *               tipoAtendimento:
+ *                 type: string
+ *                 nullable: true
+ *                 enum: [FX, VL, FV]
+ *                 description: "FX = Fixo, VL = Volante, FV = Fixo e Volante"
  *     responses:
  *       201: { description: "Colaborador criado" }
  *       400: { description: "Erro de validação / e-mail duplicado" }
@@ -58,9 +63,8 @@ router.post('/', auth(), requireLevel(3), ctrl.create);
  */
 router.get('/', auth(), ctrl.list);
 
-
-
 router.get('/cep', auth(), ctrl.cepLookup);
+
 /**
  * @swagger
  * /api/users/workers:
@@ -83,6 +87,11 @@ router.get('/cep', auth(), ctrl.cepLookup);
  *               vendorCode: { type: string, nullable: true }
  *               serviceAreaCode: { type: string, nullable: true }
  *               serviceAreaName: { type: string, nullable: true }
+ *               tipoAtendimento:
+ *                 type: string
+ *                 nullable: true
+ *                 enum: [FX, VL, FV]
+ *                 description: "FX = Fixo, VL = Volante, FV = Fixo e Volante"
  *               addressStreet: { type: string }
  *               addressNumber: { type: string }
  *               addressComplement: { type: string }
@@ -117,8 +126,8 @@ router.post('/workers', auth(), requireLevel(2), ctrl.createWorker);
  */
 router.get('/adjustable', auth(), ctrl.listAdjustable);
 
-
 router.get('/map/techs', auth(), ctrl.mapTechs);
+
 /**
  * @swagger
  * /api/users/{id}/manager:
@@ -176,6 +185,11 @@ router.patch('/:id/manager', auth(), requireLevel(2), ctrl.setManager);
  *               vendorCode:      { type: string, nullable: true }
  *               serviceAreaCode: { type: string, nullable: true }
  *               serviceAreaName: { type: string, nullable: true }
+ *               tipoAtendimento:
+ *                 type: string
+ *                 nullable: true
+ *                 enum: [FX, VL, FV]
+ *                 description: "FX = Fixo, VL = Volante, FV = Fixo e Volante"
  *     responses:
  *       200: { description: "Usuário atualizado" }
  *       404: { description: "Usuário não encontrado" }

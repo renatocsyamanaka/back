@@ -15,7 +15,12 @@ User.init(
     name: { type: DataTypes.STRING, allowNull: false },
 
     // Agora podem ser nulos para perfis sem login (técnico/PSO/ATA/PRP/SPOT)
-    email: { type: DataTypes.STRING, allowNull: true, unique: true, validate: { isEmail: true } },
+    email: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      unique: true,
+      validate: { isEmail: true },
+    },
     password_hash: { type: DataTypes.STRING, allowNull: true },
 
     // Flag que define se precisa de credenciais
@@ -28,7 +33,7 @@ User.init(
     // relacionamento simples
     managerId: { type: DataTypes.INTEGER, allowNull: true },
 
-    // ✅ novo: pertence ao estoque avançado?
+    // pertence ao estoque avançado?
     estoqueAvancado: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
 
     // Dados complementares
@@ -36,6 +41,16 @@ User.init(
     vendorCode: { type: DataTypes.STRING, allowNull: true },
     serviceAreaCode: { type: DataTypes.STRING, allowNull: true },
     serviceAreaName: { type: DataTypes.STRING, allowNull: true },
+
+    // NOVO: tipo de atendimento
+    tipoAtendimento: {
+      type: DataTypes.ENUM('FX', 'VL', 'FV'),
+      allowNull: true,
+      field: 'tipo_atendimento',
+      validate: {
+        isIn: [['FX', 'VL', 'FV']],
+      },
+    },
 
     // Endereço
     addressStreet: { type: DataTypes.STRING, allowNull: true },
@@ -77,7 +92,11 @@ User.addHook('beforeCreate', async (user) => {
 
 // Hash ao atualizar (quando trocar senha)
 User.addHook('beforeUpdate', async (user) => {
-  if (user.changed('password_hash') && user.password_hash && !user.password_hash.startsWith('$2a$')) {
+  if (
+    user.changed('password_hash') &&
+    user.password_hash &&
+    !user.password_hash.startsWith('$2a$')
+  ) {
     user.password_hash = await bcrypt.hash(user.password_hash, 10);
   }
 });
