@@ -1,5 +1,6 @@
 const Joi = require('joi');
-const { News } = require('../models');
+const { Op } = require('sequelize');
+const { News, Sector } = require('../models');
 const { ok, created, bad, notFound } = require('../utils/responses');
 const path = require('path');
 const fs = require('fs');
@@ -9,6 +10,10 @@ const createSchema = Joi.object({
   content: Joi.string().min(3).required(),
   category: Joi.string().max(60).allow(null, ''),
   isActive: Joi.boolean().default(true),
+
+  // NOVOS
+  targetAllSectors: Joi.boolean().default(true),
+  sectorIds: Joi.array().items(Joi.number().integer().positive()).default([]),
 }).required();
 
 const updateSchema = Joi.object({
@@ -16,6 +21,10 @@ const updateSchema = Joi.object({
   content: Joi.string().min(3).allow(null, ''),
   category: Joi.string().max(60).allow(null, ''),
   isActive: Joi.boolean().allow(null),
+
+  // NOVOS
+  targetAllSectors: Joi.boolean().allow(null),
+  sectorIds: Joi.array().items(Joi.number().integer().positive()).allow(null),
 }).required();
 
 function buildImageUrl(req, fileName) {
@@ -23,12 +32,69 @@ function buildImageUrl(req, fileName) {
   return `${BASE_URL}/uploads/news/${fileName}`;
 }
 
+async function validateSectorIds(sectorIds = []) {
+  if (!Array.isArray(sectorIds) || sectorIds.length === 0) return [];
+
+  const found = await Sector.findAll({
+    where: { id: sectorIds },
+    attributes: ['id'],
+  });
+
+  const foundIds = found.map(s => s.id);
+  const invalidIds = sectorIds.filter(id => !foundIds.includes(id));
+
+  if (invalidIds.length) {
+    throw new Error(`Setores inválidos: ${invalidIds.join(', ')}`);
+  }
+
+  return foundIds;
+}
+
 module.exports = {
   async list(req, res) {
     try {
+      const onlyActive = req.query.onlyActive === 'true';
+      const sectorId =
+        Number(req.query.sectorId) ||
+        Number(req.user?.sectorId) ||
+        null;
+
+      const where = {};
+      if (onlyActive) where.isActive = true;
+
+      const include = [
+        {
+          model: Sector,
+          as: 'sectors',
+          attributes: ['id', 'name'],
+          through: { attributes: [] },
+          required: false,
+        },
+      ];
+
+      // Se veio setor na query ou usuário possui setor:
+      // retorna notícias para todos OU vinculadas ao setor
+      if (sectorId) {
+        const rows = await News.findAll({
+          where,
+          include,
+          order: [['createdAt', 'DESC']],
+        });
+
+        const filtered = rows.filter(row => {
+          if (row.targetAllSectors) return true;
+          return (row.sectors || []).some(s => Number(s.id) === Number(sectorId));
+        });
+
+        return ok(res, filtered);
+      }
+
       const rows = await News.findAll({
+        where,
+        include,
         order: [['createdAt', 'DESC']],
       });
+
       return ok(res, rows);
     } catch (e) {
       console.error('[news.list]', e);
@@ -38,7 +104,17 @@ module.exports = {
 
   async getById(req, res) {
     try {
-      const row = await News.findByPk(req.params.id);
+      const row = await News.findByPk(req.params.id, {
+        include: [
+          {
+            model: Sector,
+            as: 'sectors',
+            attributes: ['id', 'name'],
+            through: { attributes: [] },
+          },
+        ],
+      });
+
       if (!row) return notFound(res, 'Notícia não encontrada');
       return ok(res, row);
     } catch (e) {
@@ -52,18 +128,43 @@ module.exports = {
     if (error) return bad(res, error.message);
 
     try {
+      const targetAllSectors = value.targetAllSectors ?? true;
+      const sectorIds = value.sectorIds || [];
+
+      if (!targetAllSectors && sectorIds.length === 0) {
+        return bad(res, 'Informe ao menos um setor ou marque a notícia como "todos os setores"');
+      }
+
+      const validSectorIds = await validateSectorIds(sectorIds);
+
       const row = await News.create({
         title: value.title,
         content: value.content,
         category: value.category || null,
         isActive: value.isActive ?? true,
+        targetAllSectors,
         createdById: req.user?.id || null,
       });
 
-      return created(res, row);
+      if (!targetAllSectors && validSectorIds.length > 0) {
+        await row.setSectors(validSectorIds);
+      }
+
+      const fresh = await News.findByPk(row.id, {
+        include: [
+          {
+            model: Sector,
+            as: 'sectors',
+            attributes: ['id', 'name'],
+            through: { attributes: [] },
+          },
+        ],
+      });
+
+      return created(res, fresh);
     } catch (e) {
       console.error('[news.create]', e);
-      return bad(res, 'Falha ao criar notícia');
+      return bad(res, e.message || 'Falha ao criar notícia');
     }
   },
 
@@ -72,20 +173,61 @@ module.exports = {
     if (error) return bad(res, error.message);
 
     try {
-      const row = await News.findByPk(req.params.id);
+      const row = await News.findByPk(req.params.id, {
+        include: [
+          {
+            model: Sector,
+            as: 'sectors',
+            attributes: ['id', 'name'],
+            through: { attributes: [] },
+          },
+        ],
+      });
+
       if (!row) return notFound(res, 'Notícia não encontrada');
+
+      const nextTargetAllSectors =
+        value.targetAllSectors != null ? value.targetAllSectors : row.targetAllSectors;
+
+      if (nextTargetAllSectors === false && Array.isArray(value.sectorIds) && value.sectorIds.length === 0) {
+        return bad(res, 'Informe ao menos um setor ou marque a notícia como "todos os setores"');
+      }
 
       await row.update({
         title: value.title != null && value.title !== '' ? value.title : row.title,
         content: value.content != null && value.content !== '' ? value.content : row.content,
         category: value.category != null ? (value.category || null) : row.category,
         isActive: value.isActive != null ? value.isActive : row.isActive,
+        targetAllSectors: nextTargetAllSectors,
       });
 
-      return ok(res, row);
+      if (Array.isArray(value.sectorIds)) {
+        const validSectorIds = await validateSectorIds(value.sectorIds);
+
+        if (nextTargetAllSectors) {
+          await row.setSectors([]);
+        } else {
+          await row.setSectors(validSectorIds);
+        }
+      } else if (nextTargetAllSectors) {
+        await row.setSectors([]);
+      }
+
+      const fresh = await News.findByPk(row.id, {
+        include: [
+          {
+            model: Sector,
+            as: 'sectors',
+            attributes: ['id', 'name'],
+            through: { attributes: [] },
+          },
+        ],
+      });
+
+      return ok(res, fresh);
     } catch (e) {
       console.error('[news.update]', e);
-      return bad(res, 'Falha ao atualizar notícia');
+      return bad(res, e.message || 'Falha ao atualizar notícia');
     }
   },
 
@@ -94,11 +236,10 @@ module.exports = {
       const row = await News.findByPk(req.params.id);
       if (!row) return notFound(res, 'Notícia não encontrada');
 
-      // remove imagem do disco (best effort)
       if (row.imageUrl) {
         try {
           const u = new URL(row.imageUrl);
-          const rel = u.pathname.replace(/^\/+/, ''); // uploads/news/xxx.png
+          const rel = u.pathname.replace(/^\/+/, '');
           const filePath = path.resolve(process.cwd(), rel);
           if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
         } catch {}
@@ -121,7 +262,6 @@ module.exports = {
 
       const url = buildImageUrl(req, req.file.filename);
 
-      // remove imagem anterior se existir (best effort)
       if (row.imageUrl) {
         try {
           const u = new URL(row.imageUrl);

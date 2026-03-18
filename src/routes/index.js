@@ -51,5 +51,6 @@ mount('/tasks',       './tasks.routes');
 mount('/news',       './news.routes');
 mount('/installation-projects',       './installationProjects.routes');
 mount('/parts', './partCatalogRoutes');
+mount('/user-registration-requests', './userRegistrationRequestRoutes');
 
 module.exports = router;

@@ -13,7 +13,6 @@ InstallationProject.init(
 
     title: { type: DataTypes.STRING, allowNull: false },
 
-    // ✅ NOVO: AF
     af: {
       type: DataTypes.STRING(50),
       allowNull: true,
@@ -23,28 +22,28 @@ InstallationProject.init(
 
     contactName: { type: DataTypes.STRING, allowNull: true },
 
-    // ✅ obrigatório (vai disparar emails)
+    // legado
     contactEmail: { type: DataTypes.STRING, allowNull: false },
+
+    // novo
+    contactEmails: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      defaultValue: [],
+    },
 
     contactPhone: { type: DataTypes.STRING, allowNull: true },
 
-    // ✅ obrigatório
     startPlannedAt: { type: DataTypes.DATE, allowNull: false },
     startAt: { type: DataTypes.DATE, allowNull: true },
     endAt: { type: DataTypes.DATE, allowNull: true },
-
-    // ✅ previsão final calculada no backend
     endPlannedAt: { type: DataTypes.DATE, allowNull: true },
 
-    // ✅ obrigatório (min 1)
     trucksTotal: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
     trucksDone: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
 
     equipmentsTotal: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
-
-    // ✅ obrigatório (Previsão de instalação por dia)
     equipmentsPerDay: { type: DataTypes.INTEGER, allowNull: false },
-
     daysEstimated: { type: DataTypes.INTEGER, allowNull: true },
 
     whatsappGroupName: { type: DataTypes.STRING, allowNull: true },
@@ -52,8 +51,18 @@ InstallationProject.init(
 
     notes: { type: DataTypes.TEXT, allowNull: true },
 
-    supervisorId: { type: DataTypes.INTEGER, allowNull: true }, // ✅ obrigatório
-    coordinatorId: { type: DataTypes.INTEGER, allowNull: true }, // ✅ derivado do supervisor
+    supervisorId: { type: DataTypes.INTEGER, allowNull: true },
+    coordinatorId: { type: DataTypes.INTEGER, allowNull: true },
+
+    // legado
+    technicianId: { type: DataTypes.INTEGER, allowNull: true },
+
+    // novo
+    technicianIds: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      defaultValue: [],
+    },
 
     createdById: { type: DataTypes.INTEGER, allowNull: false },
     updatedById: { type: DataTypes.INTEGER, allowNull: true },

@@ -1,7 +1,61 @@
-// models/User.js
 const { DataTypes, Model } = require('sequelize');
 const sequelize = require('../db');
 const bcrypt = require('bcryptjs');
+
+const ALLOWED_SECTORS = [
+  'OPERACOES',
+  'LOGISTICA',
+  'SISTEMAS',
+  'ATENDIMENTO',
+];
+
+const ALLOWED_PERMISSIONS = [
+  'DASHBOARD_VIEW',
+  'INSTALLATION_PROJECTS_VIEW',
+  'PART_REQUESTS_VIEW',
+  'MY_PART_REQUESTS_VIEW',
+  'TECHS_MAP_VIEW',
+  'USERS_VIEW',
+  'ORG_VIEW',
+  'LOCATIONS_VIEW',
+  'CLIENTS_VIEW',
+  'TASKS_VIEW',
+  'TECH_TYPES_VIEW',
+  'NEEDS_VIEW',
+  'NEEDS_MAP_VIEW',
+  'ASSIGNMENTS_VIEW',
+  'OVERTIME_VIEW',
+  'TIMEOFF_VIEW',
+  'NEWS_VIEW',
+  'NEWS_ADMIN_VIEW',
+];
+
+const DEFAULT_SECTORS = ['OPERACOES'];
+const DEFAULT_PERMISSIONS = ['DASHBOARD_VIEW', 'ASSIGNMENTS_VIEW'];
+
+function normalizeArray(value, fallback = []) {
+  if (value === undefined || value === null || value === '') {
+    return [...fallback];
+  }
+
+  let arr = value;
+
+  if (typeof arr === 'string') {
+    arr = arr.includes(',') ? arr.split(',') : [arr];
+  }
+
+  if (!Array.isArray(arr)) {
+    arr = [arr];
+  }
+
+  arr = arr
+    .map((item) => String(item || '').trim().toUpperCase())
+    .filter(Boolean);
+
+  arr = [...new Set(arr)];
+
+  return arr.length ? arr : [...fallback];
+}
 
 class User extends Model {
   async checkPassword(pw) {
@@ -12,37 +66,135 @@ class User extends Model {
 
 User.init(
   {
-    name: { type: DataTypes.STRING, allowNull: false },
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
 
-    // Agora podem ser nulos para perfis sem login (técnico/PSO/ATA/PRP/SPOT)
     email: {
       type: DataTypes.STRING,
       allowNull: true,
       unique: true,
-      validate: { isEmail: true },
+      validate: {
+        isEmail: {
+          msg: 'E-mail inválido',
+        },
+      },
     },
-    password_hash: { type: DataTypes.STRING, allowNull: true },
 
-    // Flag que define se precisa de credenciais
-    loginEnabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    password_hash: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
 
-    sex: { type: DataTypes.ENUM('M', 'F', 'O'), allowNull: true },
-    avatarUrl: { type: DataTypes.STRING, allowNull: true },
-    isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
+    loginEnabled: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true,
+    },
 
-    // relacionamento simples
-    managerId: { type: DataTypes.INTEGER, allowNull: true },
+    sex: {
+      type: DataTypes.ENUM('M', 'F', 'O'),
+      allowNull: true,
+    },
 
-    // pertence ao estoque avançado?
-    estoqueAvancado: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    avatarUrl: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
 
-    // Dados complementares
-    phone: { type: DataTypes.STRING, allowNull: true },
-    vendorCode: { type: DataTypes.STRING, allowNull: true },
-    serviceAreaCode: { type: DataTypes.STRING, allowNull: true },
-    serviceAreaName: { type: DataTypes.STRING, allowNull: true },
+    isActive: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true,
+    },
 
-    // NOVO: tipo de atendimento
+    managerId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+
+    roleId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+
+    sectors: {
+      type: DataTypes.JSON,
+      allowNull: false,
+      defaultValue: DEFAULT_SECTORS,
+      validate: {
+        isValidSectors(value) {
+          if (!Array.isArray(value)) {
+            throw new Error('O campo sectors deve ser um array.');
+          }
+
+          if (!value.length) {
+            throw new Error('Informe ao menos um setor.');
+          }
+
+          const invalid = value.filter(
+            (s) => !ALLOWED_SECTORS.includes(String(s).trim().toUpperCase())
+          );
+
+          if (invalid.length) {
+            throw new Error(`Setores inválidos: ${invalid.join(', ')}`);
+          }
+        },
+      },
+    },
+
+    permissions: {
+      type: DataTypes.JSON,
+      allowNull: false,
+      defaultValue: DEFAULT_PERMISSIONS,
+      validate: {
+        isValidPermissions(value) {
+          if (!Array.isArray(value)) {
+            throw new Error('O campo permissions deve ser um array.');
+          }
+
+          if (!value.length) {
+            throw new Error('Informe ao menos uma permissão.');
+          }
+
+          const invalid = value.filter(
+            (p) => !ALLOWED_PERMISSIONS.includes(String(p).trim().toUpperCase())
+          );
+
+          if (invalid.length) {
+            throw new Error(`Permissões inválidas: ${invalid.join(', ')}`);
+          }
+        },
+      },
+    },
+
+    estoqueAvancado: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+
+    phone: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    vendorCode: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    serviceAreaCode: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    serviceAreaName: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
     tipoAtendimento: {
       type: DataTypes.ENUM('FX', 'VL', 'FV'),
       allowNull: true,
@@ -52,19 +204,56 @@ User.init(
       },
     },
 
-    // Endereço
-    addressStreet: { type: DataTypes.STRING, allowNull: true },
-    addressNumber: { type: DataTypes.STRING, allowNull: true },
-    addressComplement: { type: DataTypes.STRING, allowNull: true },
-    addressDistrict: { type: DataTypes.STRING, allowNull: true },
-    addressCity: { type: DataTypes.STRING, allowNull: true },
-    addressState: { type: DataTypes.STRING, allowNull: true },
-    addressZip: { type: DataTypes.STRING, allowNull: true },
-    addressCountry: { type: DataTypes.STRING, allowNull: true, defaultValue: 'Brasil' },
+    addressStreet: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
 
-    // Coordenadas
-    lat: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
-    lng: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
+    addressNumber: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    addressComplement: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    addressDistrict: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    addressCity: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    addressState: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    addressZip: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    addressCountry: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: 'Brasil',
+    },
+
+    lat: {
+      type: DataTypes.DECIMAL(10, 7),
+      allowNull: true,
+    },
+
+    lng: {
+      type: DataTypes.DECIMAL(10, 7),
+      allowNull: true,
+    },
   },
   {
     sequelize,
@@ -73,32 +262,42 @@ User.init(
   }
 );
 
-// ===== Hooks =====
-
-// Regras condicionais: só exige email/senha se loginEnabled = true
 User.addHook('beforeValidate', (user) => {
   if (user.loginEnabled !== false) {
-    if (!user.email) throw new Error('E-mail é obrigatório para usuários com login');
-    if (!user.password_hash) throw new Error('Senha é obrigatória para usuários com login');
+    if (!user.email) {
+      throw new Error('E-mail é obrigatório para usuários com login');
+    }
+
+    if (!user.password_hash) {
+      throw new Error('Senha é obrigatória para usuários com login');
+    }
   }
+
+  user.sectors = normalizeArray(user.sectors, DEFAULT_SECTORS);
+  user.permissions = normalizeArray(user.permissions, DEFAULT_PERMISSIONS);
 });
 
-// Hash ao criar
 User.addHook('beforeCreate', async (user) => {
-  if (user.password_hash && !user.password_hash.startsWith('$2a$')) {
+  if (user.password_hash && !user.password_hash.startsWith('$2')) {
     user.password_hash = await bcrypt.hash(user.password_hash, 10);
   }
 });
 
-// Hash ao atualizar (quando trocar senha)
 User.addHook('beforeUpdate', async (user) => {
   if (
     user.changed('password_hash') &&
     user.password_hash &&
-    !user.password_hash.startsWith('$2a$')
+    !user.password_hash.startsWith('$2')
   ) {
     user.password_hash = await bcrypt.hash(user.password_hash, 10);
   }
+
+  user.sectors = normalizeArray(user.sectors, DEFAULT_SECTORS);
+  user.permissions = normalizeArray(user.permissions, DEFAULT_PERMISSIONS);
 });
 
 module.exports = User;
+module.exports.ALLOWED_SECTORS = ALLOWED_SECTORS;
+module.exports.ALLOWED_PERMISSIONS = ALLOWED_PERMISSIONS;
+module.exports.DEFAULT_SECTORS = DEFAULT_SECTORS;
+module.exports.DEFAULT_PERMISSIONS = DEFAULT_PERMISSIONS;

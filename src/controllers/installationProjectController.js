@@ -28,26 +28,58 @@ const {
 // Helpers
 // =========================================================
 
+function normalizeEmailList(input) {
+  let arr = input;
+
+  if (!arr) return [];
+
+  if (typeof arr === 'string') {
+    arr = arr.split(/[;,]/);
+  }
+
+  if (!Array.isArray(arr)) {
+    arr = [arr];
+  }
+
+  return [
+    ...new Set(
+      arr
+        .map((item) => String(item || '').trim().toLowerCase())
+        .filter(Boolean)
+    ),
+  ];
+}
+
+function normalizeIdList(input) {
+  let arr = input;
+
+  if (!arr) return [];
+
+  if (!Array.isArray(arr)) {
+    arr = [arr];
+  }
+
+  return [...new Set(arr.map(Number).filter(Boolean))];
+}
+
 // dias necessários = caminhões total / previsão por dia
 function calcDaysNeeded(trucksTotal, perDay) {
   if (!perDay || perDay <= 0) return null;
   return Math.ceil((trucksTotal || 0) / perDay);
 }
 
-// ✅ supervisor = level 3, coordenador = level 4 (conforme sua tabela)
+// supervisor = level 3, coordenador = level 4+
 async function findCoordinatorIdFromSupervisor(supervisorId) {
   const supervisor = await User.findByPk(supervisorId, {
     attributes: ['id', 'name', 'managerId'],
     include: [{ model: Role, as: 'role', attributes: ['level', 'name'] }],
   });
+
   if (!supervisor) return { error: 'Supervisor não encontrado' };
 
   const lvl = supervisor.role?.level || 0;
-
-  // supervisor precisa ser level 3
   if (lvl !== 3) return { error: 'Usuário selecionado não é supervisor (level 3)' };
 
-  // sobe até achar coordenador (level >= 4)
   let cursor = supervisor;
   let hops = 0;
 
@@ -58,6 +90,7 @@ async function findCoordinatorIdFromSupervisor(supervisorId) {
       attributes: ['id', 'name', 'managerId'],
       include: [{ model: Role, as: 'role', attributes: ['level', 'name'] }],
     });
+
     if (!mgr) break;
 
     const mgrLevel = mgr.role?.level || 0;
@@ -69,7 +102,7 @@ async function findCoordinatorIdFromSupervisor(supervisorId) {
   return { coordinatorId: null };
 }
 
-// ✅ valida se é técnico/prestador (level 1)
+// legado: valida um técnico
 async function validateTechnicianId(technicianId) {
   if (!technicianId) return { technician: null };
 
@@ -86,18 +119,122 @@ async function validateTechnicianId(technicianId) {
   return { technician: tech };
 }
 
-// ✅ carregar tudo para e-mail/Detalhe
+// novo: valida vários técnicos
+async function validateTechnicianIds(technicianIds = []) {
+  if (!Array.isArray(technicianIds) || !technicianIds.length) {
+    return { technicians: [] };
+  }
+
+  const uniqueIds = [...new Set(technicianIds.map(Number).filter(Boolean))];
+  const technicians = [];
+
+  for (const technicianId of uniqueIds) {
+    const tech = await User.findByPk(technicianId, {
+      attributes: ['id', 'name'],
+      include: [{ model: Role, as: 'role', attributes: ['level', 'name'] }],
+    });
+
+    if (!tech) {
+      return { error: `Técnico/Prestador ${technicianId} não encontrado` };
+    }
+
+    const lvl = tech.role?.level || 0;
+    if (lvl !== 1) {
+      return { error: `Usuário ${tech.name} não é técnico/prestador (level 1)` };
+    }
+
+    technicians.push(tech);
+  }
+
+  return { technicians };
+}
+
+async function attachTechniciansToProject(project) {
+  if (!project) return project;
+
+  const data = project.toJSON ? project.toJSON() : project;
+
+  const technicianIds = normalizeIdList(
+    data.technicianIds?.length ? data.technicianIds : data.technicianId
+  );
+
+  if (!technicianIds.length) {
+    data.techniciansList = [];
+    data.technicianNames = data.technician ? [data.technician.name] : [];
+    return data;
+  }
+
+  const techs = await User.findAll({
+    where: { id: technicianIds },
+    attributes: ['id', 'name'],
+    order: [['name', 'ASC']],
+  });
+
+  data.techniciansList = techs.map((t) => ({
+    id: t.id,
+    name: t.name,
+  }));
+
+  data.technicianNames = data.techniciansList.map((t) => t.name);
+
+  return data;
+}
+
+async function attachTechniciansToProjects(projects = []) {
+  if (!Array.isArray(projects) || !projects.length) return [];
+
+  const rows = projects.map((p) => (p.toJSON ? p.toJSON() : p));
+
+  const allIds = [
+    ...new Set(
+      rows.flatMap((row) =>
+        normalizeIdList(row.technicianIds?.length ? row.technicianIds : row.technicianId)
+      )
+    ),
+  ];
+
+  if (!allIds.length) {
+    return rows.map((row) => ({
+      ...row,
+      techniciansList: [],
+      technicianNames: row.technician ? [row.technician.name] : [],
+    }));
+  }
+
+  const techs = await User.findAll({
+    where: { id: allIds },
+    attributes: ['id', 'name'],
+    order: [['name', 'ASC']],
+  });
+
+  const techMap = new Map(techs.map((t) => [Number(t.id), { id: t.id, name: t.name }]));
+
+  return rows.map((row) => {
+    const technicianIds = normalizeIdList(
+      row.technicianIds?.length ? row.technicianIds : row.technicianId
+    );
+
+    const techniciansList = technicianIds
+      .map((id) => techMap.get(Number(id)))
+      .filter(Boolean);
+
+    return {
+      ...row,
+      techniciansList,
+      technicianNames: techniciansList.map((t) => t.name),
+    };
+  });
+}
+
+// carregar tudo para detalhe/e-mail
 async function loadProjectWithDetails(projectId) {
-  return InstallationProject.findByPk(projectId, {
+  const project = await InstallationProject.findByPk(projectId, {
     include: [
       { model: Client, as: 'client', attributes: ['id', 'name'] },
       { model: User, as: 'creator', attributes: ['id', 'name'] },
-
-      // ✅ supervisor/coordinator/technician
       { model: User, as: 'supervisor', attributes: ['id', 'name'] },
       { model: User, as: 'coordinator', attributes: ['id', 'name'] },
       { model: User, as: 'technician', attributes: ['id', 'name'] },
-
       { model: InstallationProjectItem, as: 'items' },
       {
         model: InstallationProjectProgress,
@@ -109,11 +246,23 @@ async function loadProjectWithDetails(projectId) {
       },
     ],
   });
+
+  return attachTechniciansToProject(project);
 }
 
 // =========================================================
 // Schemas
 // =========================================================
+
+const startFinishSchema = Joi.object({
+  sendEmail: Joi.boolean().default(true),
+  emailTo: Joi.alternatives().try(
+    Joi.string().email(),
+    Joi.array().items(Joi.string().email()).min(1)
+  ).allow(null),
+  emailCc: Joi.array().items(Joi.string().email()).allow(null),
+  message: Joi.string().allow('', null),
+}).options({ abortEarly: false, stripUnknown: true });
 
 const createSchema = Joi.object({
   title: Joi.string().required(),
@@ -123,30 +272,26 @@ const createSchema = Joi.object({
 
   contactName: Joi.string().allow('', null),
 
-  // obrigatório (vai disparar emails)
-  contactEmail: Joi.string().email().required(),
+  // legado
+  contactEmail: Joi.string().email().allow('', null),
+
+  // novo
+  contactEmails: Joi.array().items(Joi.string().email()).min(1).required(),
+
   contactPhone: Joi.string().allow('', null),
 
-  // obrigatório
   startPlannedAt: Joi.date().required(),
-
-  // obrigatório
   trucksTotal: Joi.number().integer().min(1).required(),
-
-  // obrigatório
   equipmentsPerDay: Joi.number().integer().min(1).required(),
-
-  // ✅ supervisor obrigatório (front envia)
   supervisorId: Joi.number().integer().required(),
 
-  // ✅ NOVO: técnico/prestador que vai atender
-  // (deixe optional aqui se você quiser cadastrar projeto sem definir na hora)
+  // legado
   technicianId: Joi.number().integer().allow(null),
 
-  notes: Joi.string().allow('', null),
+  // novo
+  technicianIds: Joi.array().items(Joi.number().integer()).min(1).required(),
 
-  // ⚠️ às vezes o front manda isso por engano — aceitamos para não quebrar,
-  // mas NÃO usamos (recalcula via supervisor)
+  notes: Joi.string().allow('', null),
   coordinatorId: Joi.number().integer().allow(null),
 }).options({ abortEarly: false, stripUnknown: true });
 
@@ -154,6 +299,14 @@ const listSchema = Joi.object({
   status: Joi.string().valid('A_INICIAR', 'INICIADO', 'FINALIZADO').allow(null),
   q: Joi.string().allow('', null),
   mine: Joi.boolean().default(false),
+}).options({ abortEarly: false, stripUnknown: true });
+
+const emailSendSchema = Joi.object({
+  emailTo: Joi.alternatives().try(
+    Joi.string().email(),
+    Joi.array().items(Joi.string().email()).min(1)
+  ).allow('', null),
+  emailCc: Joi.array().items(Joi.string().email()).allow(null),
 }).options({ abortEarly: false, stripUnknown: true });
 
 // =========================================================
@@ -184,15 +337,14 @@ module.exports = {
       include: [
         { model: Client, as: 'client', attributes: ['id', 'name'] },
         { model: User, as: 'creator', attributes: ['id', 'name'] },
-
-        // ✅ supervisor/coordinator/technician no list
         { model: User, as: 'supervisor', attributes: ['id', 'name'] },
         { model: User, as: 'coordinator', attributes: ['id', 'name'] },
         { model: User, as: 'technician', attributes: ['id', 'name'] },
       ],
     });
 
-    return ok(res, rows);
+    const enriched = await attachTechniciansToProjects(rows);
+    return ok(res, enriched);
   },
 
   async getById(req, res) {
@@ -205,14 +357,24 @@ module.exports = {
     const { error, value } = createSchema.validate(req.body);
     if (error) return bad(res, error.message);
 
-    // ✅ valida técnico (se vier)
-    if (value.technicianId) {
-      const { error: techErr } = await validateTechnicianId(value.technicianId);
-      if (techErr) return bad(res, techErr);
+    const normalizedEmails = normalizeEmailList(value.contactEmails || value.contactEmail);
+    if (!normalizedEmails.length) {
+      return bad(res, 'Informe pelo menos um e-mail de contato');
     }
 
-    // ✅ calcula coordenador pelo supervisor
-    const { coordinatorId, error: coordErr } = await findCoordinatorIdFromSupervisor(value.supervisorId);
+    const normalizedTechnicianIds = normalizeIdList(
+      value.technicianIds || (value.technicianId ? [value.technicianId] : [])
+    );
+
+    if (!normalizedTechnicianIds.length) {
+      return bad(res, 'Informe pelo menos um técnico/prestador');
+    }
+
+    const { error: techErr } = await validateTechnicianIds(normalizedTechnicianIds);
+    if (techErr) return bad(res, techErr);
+
+    const { coordinatorId, error: coordErr } =
+      await findCoordinatorIdFromSupervisor(value.supervisorId);
     if (coordErr) return bad(res, coordErr);
 
     const daysNeeded = calcDaysNeeded(value.trucksTotal, value.equipmentsPerDay);
@@ -221,25 +383,23 @@ module.exports = {
     const project = await InstallationProject.create({
       title: value.title,
       clientId: value.clientId ?? null,
-
       af: value.af ? String(value.af).trim() : null,
 
       contactName: value.contactName ?? null,
-      contactEmail: value.contactEmail,
+      contactEmail: normalizedEmails[0], // legado
+      contactEmails: normalizedEmails, // novo
       contactPhone: value.contactPhone ?? null,
 
       startPlannedAt: value.startPlannedAt,
-
       trucksTotal: value.trucksTotal,
       equipmentsPerDay: value.equipmentsPerDay,
-
       notes: value.notes ?? null,
 
       supervisorId: value.supervisorId,
       coordinatorId: coordinatorId ?? null,
 
-      // ✅ NOVO
-      technicianId: value.technicianId ?? null,
+      technicianId: normalizedTechnicianIds[0], // legado
+      technicianIds: normalizedTechnicianIds, // novo
 
       createdById: req.user.id,
       updatedById: req.user.id,
@@ -247,7 +407,6 @@ module.exports = {
       status: 'A_INICIAR',
       trucksDone: 0,
       equipmentsTotal: 0,
-
       daysEstimated: daysNeeded,
       endPlannedAt,
     });
@@ -260,39 +419,65 @@ module.exports = {
     const project = await InstallationProject.findByPk(req.params.id);
     if (!project) return notFound(res, 'Projeto não encontrado');
 
-    // update: torna campos opcionais
     const schema = createSchema.fork(
-      ['title', 'contactEmail', 'startPlannedAt', 'trucksTotal', 'equipmentsPerDay', 'supervisorId'],
+      [
+        'title',
+        'contactEmails',
+        'startPlannedAt',
+        'trucksTotal',
+        'equipmentsPerDay',
+        'supervisorId',
+        'technicianIds',
+      ],
       (s) => s.optional()
     );
 
     const { error, value } = schema.validate(req.body);
     if (error) return bad(res, error.message);
 
-    // ⚠️ IMPORTANTE: ignore coordinatorId vindo do front (se vier)
-    // sempre recalculamos via supervisor quando supervisorId vier.
     const { coordinatorId: _ignoreCoordinatorId, ...rest } = value;
-
-    // ✅ valida técnico (se vier no update)
-    if (rest.technicianId !== undefined && rest.technicianId !== null) {
-      const { error: techErr } = await validateTechnicianId(rest.technicianId);
-      if (techErr) return bad(res, techErr);
-    }
 
     const next = {
       ...rest,
-      af: rest.af === '' ? null : rest.af ?? project.af,
+      af: rest.af === '' ? null : (rest.af ?? project.af),
       updatedById: req.user.id,
     };
 
-    // ✅ se supervisor mudar, recalcula coordinatorId
+    if (rest.contactEmails !== undefined || rest.contactEmail !== undefined) {
+      const normalizedEmails = normalizeEmailList(rest.contactEmails || rest.contactEmail);
+
+      if (!normalizedEmails.length) {
+        return bad(res, 'Informe pelo menos um e-mail de contato');
+      }
+
+      next.contactEmails = normalizedEmails;
+      next.contactEmail = normalizedEmails[0];
+    }
+
+    if (rest.technicianIds !== undefined || rest.technicianId !== undefined) {
+      const normalizedTechnicianIds = normalizeIdList(
+        rest.technicianIds || (rest.technicianId ? [rest.technicianId] : [])
+      );
+
+      if (!normalizedTechnicianIds.length) {
+        return bad(res, 'Informe pelo menos um técnico/prestador');
+      }
+
+      const { error: techErr } = await validateTechnicianIds(normalizedTechnicianIds);
+      if (techErr) return bad(res, techErr);
+
+      next.technicianIds = normalizedTechnicianIds;
+      next.technicianId = normalizedTechnicianIds[0];
+    }
+
     if (rest.supervisorId) {
-      const { coordinatorId, error: coordErr } = await findCoordinatorIdFromSupervisor(rest.supervisorId);
+      const { coordinatorId, error: coordErr } =
+        await findCoordinatorIdFromSupervisor(rest.supervisorId);
       if (coordErr) return bad(res, coordErr);
+
       next.coordinatorId = coordinatorId ?? null;
     }
 
-    // ✅ Recalcular previsão final se mudar data/perDay/trucksTotal
     const trucksTotal = rest.trucksTotal ?? project.trucksTotal;
     const perDay = rest.equipmentsPerDay ?? project.equipmentsPerDay;
     const startPlannedAt = rest.startPlannedAt ?? project.startPlannedAt;
@@ -320,24 +505,45 @@ module.exports = {
     if (!project) return notFound(res, 'Projeto não encontrado');
 
     await project.update({ ...value, updatedById: req.user.id });
+
     const full = await loadProjectWithDetails(project.id);
     return ok(res, full);
   },
 
   async start(req, res) {
+    const { error, value } = startFinishSchema.validate(req.body || {});
+    if (error) return bad(res, error.message);
+
     const project = await InstallationProject.findByPk(req.params.id);
     if (!project) return notFound(res, 'Projeto não encontrado');
 
-    if (!project.startPlannedAt) return bad(res, 'Defina a data de início prevista antes de iniciar');
-    if (!project.contactEmail) return bad(res, 'Defina o e-mail do cliente antes de iniciar');
-    if (project.trucksTotal <= 0) return bad(res, 'Defina a quantidade total de caminhões');
-    if (!project.equipmentsPerDay || project.equipmentsPerDay <= 0)
+    if (!project.startPlannedAt) {
+      return bad(res, 'Defina a data de início prevista antes de iniciar');
+    }
+
+    const emails = Array.isArray(project.contactEmails) ? project.contactEmails : [];
+    if (!emails.length && !project.contactEmail) {
+      return bad(res, 'Defina pelo menos um e-mail do cliente antes de iniciar');
+    }
+
+    if (project.trucksTotal <= 0) {
+      return bad(res, 'Defina a quantidade total de caminhões');
+    }
+
+    if (!project.equipmentsPerDay || project.equipmentsPerDay <= 0) {
       return bad(res, 'Defina a previsão de instalação por dia');
+    }
 
-    if (!project.supervisorId) return bad(res, 'Defina o supervisor do projeto antes de iniciar');
+    if (!project.supervisorId) {
+      return bad(res, 'Defina o supervisor do projeto antes de iniciar');
+    }
 
-    // ✅ NOVO: exigir técnico antes de iniciar (se você quiser)
-    if (!project.technicianId) return bad(res, 'Defina o técnico/prestador do projeto antes de iniciar');
+    const technicianIds = Array.isArray(project.technicianIds)
+      ? project.technicianIds
+      : [];
+    if (!technicianIds.length && !project.technicianId) {
+      return bad(res, 'Defina pelo menos um técnico/prestador antes de iniciar');
+    }
 
     await project.update({
       status: 'INICIADO',
@@ -346,10 +552,66 @@ module.exports = {
     });
 
     const full = await loadProjectWithDetails(project.id);
-    return ok(res, full);
+    const p = full?.toJSON ? full.toJSON() : full;
+
+    let emailResult = {
+      attempted: false,
+      sent: false,
+      to: [],
+      error: null,
+    };
+
+    if (value.sendEmail !== false) {
+      try {
+        const to = normalizeEmailList(value.emailTo || p.contactEmails || p.contactEmail);
+
+        if (to.length) {
+          const subject = `INÍCIO • ${p.title}${p.af ? ` • ${p.af}` : ''}`;
+          const html = startEmailHtml(p, value.message);
+
+          await sendMail({
+            to,
+            cc: value.emailCc?.length ? value.emailCc : undefined,
+            subject,
+            html,
+            replyTo: process.env.MAIL_REPLY_TO || undefined,
+          });
+
+          emailResult = {
+            attempted: true,
+            sent: true,
+            to,
+            error: null,
+          };
+        } else {
+          emailResult = {
+            attempted: true,
+            sent: false,
+            to: [],
+            error: 'Projeto sem e-mail de contato',
+          };
+        }
+      } catch (err) {
+        console.error('start project email error:', err);
+        emailResult = {
+          attempted: true,
+          sent: false,
+          to: [],
+          error: err.message || 'Falha ao enviar e-mail de início',
+        };
+      }
+    }
+
+    return ok(res, {
+      ...p,
+      emailResult,
+    });
   },
 
   async finish(req, res) {
+    const { error, value } = startFinishSchema.validate(req.body || {});
+    if (error) return bad(res, error.message);
+
     const project = await InstallationProject.findByPk(req.params.id);
     if (!project) return notFound(res, 'Projeto não encontrado');
 
@@ -364,7 +626,68 @@ module.exports = {
     });
 
     const full = await loadProjectWithDetails(project.id);
-    return ok(res, full);
+    const p = full?.toJSON ? full.toJSON() : full;
+
+    let emailResult = {
+      attempted: false,
+      sent: false,
+      to: [],
+      error: null,
+    };
+
+    if (value.sendEmail !== false) {
+      try {
+        const to = normalizeEmailList(value.emailTo || p.contactEmails || p.contactEmail);
+
+        if (to.length) {
+          const progressList = await InstallationProjectProgress.findAll({
+            where: { projectId: project.id },
+            order: [['date', 'ASC'], ['id', 'ASC']],
+            include: [
+              { model: User, as: 'author', attributes: ['id', 'name'] },
+              { model: InstallationProjectProgressVehicle, as: 'vehicles' },
+            ],
+          });
+
+          const html = finalEmailHtml(p, progressList, value.message);
+
+          await sendMail({
+            to,
+            cc: value.emailCc?.length ? value.emailCc : undefined,
+            subject: `ENCERRAMENTO • ${p.title}${p.af ? ` • ${p.af}` : ''}`,
+            html,
+            replyTo: process.env.MAIL_REPLY_TO || undefined,
+          });
+
+          emailResult = {
+            attempted: true,
+            sent: true,
+            to,
+            error: null,
+          };
+        } else {
+          emailResult = {
+            attempted: true,
+            sent: false,
+            to: [],
+            error: 'Projeto sem e-mail de contato',
+          };
+        }
+      } catch (err) {
+        console.error('finish project email error:', err);
+        emailResult = {
+          attempted: true,
+          sent: false,
+          to: [],
+          error: err.message || 'Falha ao enviar e-mail de encerramento',
+        };
+      }
+    }
+
+    return ok(res, {
+      ...p,
+      emailResult,
+    });
   },
 
   async addItem(req, res) {
@@ -385,7 +708,10 @@ module.exports = {
       ...value,
     });
 
-    const items = await InstallationProjectItem.findAll({ where: { projectId: project.id } });
+    const items = await InstallationProjectItem.findAll({
+      where: { projectId: project.id },
+    });
+
     const equipmentsTotal = items.reduce((sum, it) => sum + (it.qty || 0), 0);
 
     await project.update({
@@ -424,6 +750,7 @@ module.exports = {
     if (!project) return notFound(res, 'Projeto não encontrado');
 
     const t = await sequelize.transaction();
+
     try {
       const trucksDoneToday = value.vehicles.length;
 
@@ -454,7 +781,13 @@ module.exports = {
 
       const trucksDone = all.reduce((sum, p) => sum + (p.trucksDoneToday || 0), 0);
 
-      await project.update({ trucksDone, updatedById: req.user.id }, { transaction: t });
+      await project.update(
+        {
+          trucksDone,
+          updatedById: req.user.id,
+        },
+        { transaction: t }
+      );
 
       await t.commit();
 
@@ -474,11 +807,9 @@ module.exports = {
   // =========================================================
 
   async sendStartEmail(req, res) {
-    const schema = Joi.object({
-      emailTo: Joi.string().email().allow('', null),
-      emailCc: Joi.array().items(Joi.string().email()).allow(null),
+    const schema = emailSendSchema.keys({
       message: Joi.string().allow('', null),
-    }).options({ abortEarly: false, stripUnknown: true });
+    });
 
     const { error, value } = schema.validate(req.body || {});
     if (error) return bad(res, error.message);
@@ -486,30 +817,31 @@ module.exports = {
     const project = await loadProjectWithDetails(req.params.id);
     if (!project) return notFound(res, 'Projeto não encontrado');
 
-    const p = project.toJSON();
-    const to = (value.emailTo || p.contactEmail || '').trim();
-    if (!to) return bad(res, 'Projeto sem e-mail de contato (contactEmail) e emailTo não informado');
+    const p = project.toJSON ? project.toJSON() : project;
+
+    const to = normalizeEmailList(value.emailTo || p.contactEmails || p.contactEmail);
+    if (!to.length) {
+      return bad(res, 'Projeto sem e-mail de contato');
+    }
 
     const subject = `INÍCIO • ${p.title}${p.af ? ` • ${p.af}` : ''}`;
     const html = startEmailHtml(p, value.message);
 
     await sendMail({
       to,
-      cc: value.emailCc || undefined,
+      cc: value.emailCc?.length ? value.emailCc : undefined,
       subject,
       html,
       replyTo: process.env.MAIL_REPLY_TO || undefined,
     });
 
-    return ok(res, { sent: true });
+    return ok(res, { sent: true, to });
   },
 
   async sendDailyEmail(req, res) {
-    const schema = Joi.object({
-      emailTo: Joi.string().email().allow('', null),
-      emailCc: Joi.array().items(Joi.string().email()).allow(null),
-      date: Joi.string().allow('', null), // YYYY-MM-DD ou ISO
-    }).options({ abortEarly: false, stripUnknown: true });
+    const schema = emailSendSchema.keys({
+      date: Joi.string().allow('', null),
+    });
 
     const { error, value } = schema.validate(req.body || {});
     if (error) return bad(res, error.message);
@@ -518,12 +850,17 @@ module.exports = {
       const project = await InstallationProject.findByPk(req.params.id, {
         include: [{ model: Client, as: 'client', attributes: ['id', 'name'] }],
       });
+
       if (!project) return notFound(res, 'Projeto não encontrado');
 
-      const to = String(value.emailTo || project.contactEmail || '').trim();
-      if (!to) return bad(res, 'Projeto sem e-mail de contato (contactEmail) e emailTo não informado');
+      const to = normalizeEmailList(value.emailTo || project.contactEmails || project.contactEmail);
+      if (!to.length) {
+        return bad(res, 'Projeto sem e-mail de contato');
+      }
 
-      const targetDate = value.date ? String(value.date).slice(0, 10) : dayjs().format('YYYY-MM-DD');
+      const targetDate = value.date
+        ? String(value.date).slice(0, 10)
+        : dayjs().format('YYYY-MM-DD');
 
       if (!dayjs(targetDate, 'YYYY-MM-DD', true).isValid()) {
         return bad(res, 'date inválido. Use YYYY-MM-DD');
@@ -552,19 +889,22 @@ module.exports = {
         replyTo: process.env.MAIL_REPLY_TO || undefined,
       });
 
-      return ok(res, { sent: true, to, targetDate, count: progressList.length });
+      return ok(res, {
+        sent: true,
+        to,
+        targetDate,
+        count: progressList.length,
+      });
     } catch (err) {
       console.error('sendDailyEmail error:', err);
-      return bad(res?.message || 'Erro ao enviar reporte diário');
+      return bad(res, err.message || 'Erro ao enviar reporte diário');
     }
   },
 
   async sendFinalEmail(req, res) {
-    const schema = Joi.object({
-      emailTo: Joi.string().email().allow('', null),
-      emailCc: Joi.array().items(Joi.string().email()).allow(null),
+    const schema = emailSendSchema.keys({
       procedures: Joi.string().allow('', null),
-    }).options({ abortEarly: false, stripUnknown: true });
+    });
 
     const { error, value } = schema.validate(req.body || {});
     if (error) return bad(res, error.message);
@@ -572,9 +912,12 @@ module.exports = {
     const project = await loadProjectWithDetails(req.params.id);
     if (!project) return notFound(res, 'Projeto não encontrado');
 
-    const p = project.toJSON();
-    const to = (value.emailTo || p.contactEmail || '').trim();
-    if (!to) return bad(res, 'Projeto sem e-mail de contato (contactEmail) e emailTo não informado');
+    const p = project.toJSON ? project.toJSON() : project;
+
+    const to = normalizeEmailList(value.emailTo || p.contactEmails || p.contactEmail);
+    if (!to.length) {
+      return bad(res, 'Projeto sem e-mail de contato');
+    }
 
     const progressList = Array.isArray(p.progress) ? p.progress : [];
     progressList.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -584,12 +927,16 @@ module.exports = {
 
     await sendMail({
       to,
-      cc: value.emailCc || undefined,
+      cc: value.emailCc?.length ? value.emailCc : undefined,
       subject,
       html,
       replyTo: process.env.MAIL_REPLY_TO || undefined,
     });
 
-    return ok(res, { sent: true, count: progressList.length });
+    return ok(res, {
+      sent: true,
+      to,
+      count: progressList.length,
+    });
   },
 };

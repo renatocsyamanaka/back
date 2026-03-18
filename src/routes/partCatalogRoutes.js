@@ -23,7 +23,7 @@ const ctrl = require('../controllers/partCatalogController');
  *     security: [{ bearerAuth: [] }]
  */
 router.post('/', auth(), requireLevel(2), ctrl.create);
-router.get('/', auth(), ctrl.list);
+router.get('/',  ctrl.list);
 
 /**
  * @swagger

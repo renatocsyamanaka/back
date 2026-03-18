@@ -3,7 +3,6 @@ const auth = require('../middleware/auth');
 const requireLevel = require('../middleware/rbac');
 const ctrl = require('../controllers/newsController');
 
-// Upload (opcional) para imagem da notícia
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -13,7 +12,7 @@ function ensureDir(p) {
 }
 
 const storage = multer.diskStorage({
-  destination: (req, _file, cb) => {
+  destination: (_req, _file, cb) => {
     const dir = path.join(process.cwd(), 'uploads', 'news');
     ensureDir(dir);
     cb(null, dir);
@@ -27,7 +26,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
+  limits: { fileSize: 8 * 1024 * 1024 },
 });
 
 /**

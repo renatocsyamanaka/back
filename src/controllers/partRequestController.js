@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const {
   PartRequest,
   PartRequestItem,
@@ -34,7 +35,9 @@ async function recalculateRequestStatus(partRequestId, transaction) {
   const approvedPartial = items.filter((i) => i.itemStatus === 'APPROVED_PARTIAL').length;
   const rejected = items.filter((i) => i.itemStatus === 'REJECTED').length;
   const fulfilled = items.filter((i) => i.itemStatus === 'FULFILLED').length;
-  const partiallyFulfilled = items.filter((i) => i.itemStatus === 'PARTIALLY_FULFILLED').length;
+  const partiallyFulfilled = items.filter(
+    (i) => i.itemStatus === 'PARTIALLY_FULFILLED'
+  ).length;
 
   let newStatus = request.status;
 
@@ -77,7 +80,6 @@ async function create(req, res) {
 
   try {
     const {
-      originType = 'INTERNAL',
       requesterName,
       requesterDocument,
       requesterPhone,
@@ -107,9 +109,19 @@ async function create(req, res) {
       items = [],
     } = req.body;
 
+    const resolvedOriginType = req.user?.id ? 'INTERNAL' : 'EXTERNAL_IDENTIFIED';
+    const isPublicRequest = !req.user?.id;
+
     if (!clean(requesterName)) {
       await transaction.rollback();
       return res.status(400).json({ message: 'Nome do solicitante é obrigatório.' });
+    }
+
+    if (isPublicRequest && !clean(requesterEmail)) {
+      await transaction.rollback();
+      return res.status(400).json({
+        message: 'E-mail do solicitante é obrigatório para solicitação externa.',
+      });
     }
 
     if (!Array.isArray(items) || !items.length) {
@@ -117,12 +129,35 @@ async function create(req, res) {
       return res.status(400).json({ message: 'Informe pelo menos um item.' });
     }
 
+    let clientSnapshot = clean(clientNameSnapshot) || null;
+    let providerSnapshot = clean(providerNameSnapshot) || null;
+    let technicianSnapshot = clean(technicianNameSnapshot) || null;
+
     if (clientId) {
       const clientExists = await Client.findByPk(clientId, { transaction });
       if (!clientExists) {
         await transaction.rollback();
         return res.status(400).json({ message: 'Cliente informado não existe.' });
       }
+      clientSnapshot = clientSnapshot || clientExists.name;
+    }
+
+    if (providerId) {
+      const providerExists = await User.findByPk(providerId, { transaction });
+      if (!providerExists) {
+        await transaction.rollback();
+        return res.status(400).json({ message: 'Prestador informado não existe.' });
+      }
+      providerSnapshot = providerSnapshot || providerExists.name;
+    }
+
+    if (technicianId) {
+      const technicianExists = await User.findByPk(technicianId, { transaction });
+      if (!technicianExists) {
+        await transaction.rollback();
+        return res.status(400).json({ message: 'Técnico informado não existe.' });
+      }
+      technicianSnapshot = technicianSnapshot || technicianExists.name;
     }
 
     if (managerId) {
@@ -136,7 +171,7 @@ async function create(req, res) {
     const request = await PartRequest.create(
       {
         requestNumber: generateRequestNumber(),
-        originType,
+        originType: resolvedOriginType,
         requesterUserId: req.user?.id || null,
         requesterName: clean(requesterName),
         requesterDocument: clean(requesterDocument) || null,
@@ -144,11 +179,11 @@ async function create(req, res) {
         requesterEmail: clean(requesterEmail) || null,
         requestType,
         clientId: clientId || null,
-        clientNameSnapshot: clean(clientNameSnapshot) || null,
+        clientNameSnapshot: clientSnapshot,
         providerId: providerId || null,
-        providerNameSnapshot: clean(providerNameSnapshot) || null,
+        providerNameSnapshot: providerSnapshot,
         technicianId: technicianId || null,
-        technicianNameSnapshot: clean(technicianNameSnapshot) || null,
+        technicianNameSnapshot: technicianSnapshot,
         region: clean(region) || null,
         occurrence: clean(occurrence) || null,
         naCode: clean(naCode) || null,
@@ -251,14 +286,27 @@ async function list(req, res) {
       clientId,
       managerId,
       mine,
+      originType,
     } = req.query;
 
     const where = {};
+
     if (status) where.status = status;
-    if (requestNumber) where.requestNumber = requestNumber;
-    if (requesterName) where.requesterName = requesterName;
     if (clientId) where.clientId = clientId;
     if (managerId) where.managerId = managerId;
+    if (originType) where.originType = originType;
+
+    if (requestNumber) {
+      where.requestNumber = {
+        [Op.like]: `%${clean(requestNumber)}%`,
+      };
+    }
+
+    if (requesterName) {
+      where.requesterName = {
+        [Op.like]: `%${clean(requesterName)}%`,
+      };
+    }
 
     if (String(mine) === 'true') {
       where.requesterUserId = req.user?.id || 0;
@@ -336,6 +384,94 @@ async function show(req, res) {
     console.error('[partRequest.show]', error);
     return res.status(500).json({
       message: 'Erro ao buscar pedido.',
+      error: error.message,
+    });
+  }
+}
+
+async function publicSearch(req, res) {
+  try {
+    const { requestNumber, email } = req.query;
+
+    if (!clean(requestNumber)) {
+      return res.status(400).json({
+        message: 'Informe o número do pedido.',
+      });
+    }
+
+    if (!clean(email)) {
+      return res.status(400).json({
+        message: 'Informe o e-mail do solicitante.',
+      });
+    }
+
+    const row = await PartRequest.findOne({
+      where: {
+        requestNumber: clean(requestNumber),
+        requesterEmail: clean(email),
+      },
+      include: [
+        {
+          association: 'items',
+          required: false,
+          separate: true,
+          order: [['id', 'ASC']],
+        },
+        {
+          association: 'client',
+          attributes: ['id', 'name'],
+          required: false,
+        },
+      ],
+      order: [['id', 'DESC']],
+    });
+
+    if (!row) {
+      return res.status(404).json({
+        message: 'Pedido não encontrado para os dados informados.',
+      });
+    }
+
+    return res.json({
+      id: row.id,
+      requestNumber: row.requestNumber,
+      status: row.status,
+      originType: row.originType,
+      requesterName: row.requesterName,
+      requesterEmail: row.requesterEmail,
+      requesterPhone: row.requesterPhone,
+      requestType: row.requestType,
+      clientName: row.clientNameSnapshot || row.client?.name || null,
+      providerName: row.providerNameSnapshot || null,
+      technicianName: row.technicianNameSnapshot || null,
+      fulfillmentType: row.fulfillmentType,
+      city: row.city,
+      state: row.state,
+      requestNotes: row.requestNotes,
+      createdAt: row.createdAt,
+      submittedAt: row.submittedAt,
+      items: (row.items || []).map((item) => ({
+        id: item.id,
+        partCode: item.partCode,
+        partName: item.partName,
+        unit: item.unit,
+        requestedQty: item.requestedQty,
+        approvedQty: item.approvedQty,
+        deliveredQty: item.deliveredQty,
+        rejectedQty: item.rejectedQty,
+        pendingQty: item.pendingQty,
+        itemStatus: item.itemStatus,
+        itemRequestNote: item.itemRequestNote,
+        managerNote: item.managerNote,
+        stockNote: item.stockNote,
+        reasonCode: item.reasonCode,
+        reasonDetails: item.reasonDetails,
+      })),
+    });
+  } catch (error) {
+    console.error('[partRequest.publicSearch]', error);
+    return res.status(500).json({
+      message: 'Erro ao consultar pedido.',
       error: error.message,
     });
   }
@@ -459,7 +595,9 @@ async function update(req, res) {
         actionType: 'REQUEST_UPDATED',
         previousStatus,
         newStatus: row.status,
-        comments: changes.length ? changes.join(' | ') : 'Pedido atualizado sem alteração relevante.',
+        comments: changes.length
+          ? changes.join(' | ')
+          : 'Pedido atualizado sem alteração relevante.',
         performedByUserId: req.user?.id || null,
         performedByName: req.user?.name || req.user?.nome || 'Usuário',
         performedByProfile: req.user?.role?.name || 'USUÁRIO',
@@ -680,6 +818,7 @@ module.exports = {
   create,
   list,
   show,
+  publicSearch,
   update,
   batchApprove,
 };

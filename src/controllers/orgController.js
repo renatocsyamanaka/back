@@ -1,43 +1,121 @@
-// src/controllers/orgController.js
 const { User, Role } = require('../models');
 const { ok } = require('../utils/responses');
 
-function buildTreeFromFlat(list) {
-  const map = new Map();
-  const roots = [];
+function normalizeSectors(value) {
+  if (!value) return [];
 
-  // cria nós básicos
+  if (Array.isArray(value)) {
+    return [...new Set(value.map((s) => String(s || '').trim().toUpperCase()).filter(Boolean))];
+  }
+
+  if (typeof value === 'string') {
+    return [...new Set(value.split(',').map((s) => String(s || '').trim().toUpperCase()).filter(Boolean))];
+  }
+
+  return [];
+}
+
+function buildTreeFromFlat(list) {
+  const byId = new Map();
+  const childrenByManager = new Map();
+
   for (const u of list) {
-    map.set(u.id, {
+    byId.set(u.id, {
       id: u.id,
       name: u.name,
-      role: u.role ? u.role.name : null,
-      roleLevel: u.role ? u.role.level : null,
+      role: u.role?.name || null,
+      roleLevel: u.role?.level || 0,
       managerId: u.managerId ?? null,
       avatarUrl: u.avatarUrl || null,
+      sectors: normalizeSectors(u.sectors),
       children: [],
     });
   }
 
-  // conecta filhos aos gestores
+  // agrupa filhos por managerId
   for (const u of list) {
-    const node = map.get(u.id);
-    if (u.managerId && map.has(u.managerId)) {
-      map.get(u.managerId).children.push(node);
-    } else {
-      // se não tem gestor (ou gestor não encontrado), vira raiz
-      roots.push(node);
+    if (!childrenByManager.has(u.managerId ?? null)) {
+      childrenByManager.set(u.managerId ?? null, []);
+    }
+    childrenByManager.get(u.managerId ?? null).push(u.id);
+  }
+
+  // define raízes reais
+  let rootIds = list
+    .filter((u) => !u.managerId || u.managerId === u.id || !byId.has(u.managerId))
+    .map((u) => u.id);
+
+  // fallback: se ninguém estiver sem gestor, pega maior nível
+  if (rootIds.length === 0) {
+    const maxLevel = Math.max(...list.map((u) => u.role?.level || 0));
+    rootIds = list.filter((u) => (u.role?.level || 0) === maxLevel).map((u) => u.id);
+  }
+
+  const globallyVisited = new Set();
+
+  function mountNode(nodeId, path = new Set()) {
+    const node = byId.get(nodeId);
+    if (!node) return null;
+
+    // se detectou ciclo, corta esse ramo
+    if (path.has(nodeId)) {
+      console.warn('CICLO CORTADO NO ORG:', [...path, nodeId]);
+      return null;
+    }
+
+    const nextPath = new Set(path);
+    nextPath.add(nodeId);
+
+    const childIds = childrenByManager.get(nodeId) || [];
+    const mountedChildren = [];
+
+    for (const childId of childIds) {
+      if (childId === nodeId) {
+        console.warn('AUTO GERENCIAMENTO CORTADO:', nodeId);
+        continue;
+      }
+
+      const childNode = mountNode(childId, nextPath);
+      if (childNode) mountedChildren.push(childNode);
+    }
+
+    return {
+      ...node,
+      children: mountedChildren.sort(
+        (a, b) =>
+          (b.roleLevel ?? 0) - (a.roleLevel ?? 0) ||
+          String(a.name || '').localeCompare(String(b.name || ''))
+      ),
+    };
+  }
+
+  const roots = [];
+  for (const rootId of rootIds) {
+    const mounted = mountNode(rootId);
+    if (mounted) {
+      roots.push(mounted);
+      globallyVisited.add(rootId);
     }
   }
 
-  // ordena por nível/cargo e nome (opcional)
-  const sortRec = (nodes) => {
-    nodes.sort((a, b) =>
-      (b.roleLevel ?? 0) - (a.roleLevel ?? 0) || a.name.localeCompare(b.name)
-    );
-    nodes.forEach(n => sortRec(n.children));
-  };
-  sortRec(roots);
+  // adiciona nós não alcançados como raízes órfãs, sem destruir a hierarquia deles
+  for (const u of list) {
+    const alreadyInRoots = roots.some((r) => r.id === u.id);
+    if (alreadyInRoots) continue;
+
+    const appearsAsChild = list.some((x) => x.managerId === u.id);
+    const mounted = mountNode(u.id);
+
+    if (mounted && !roots.find((r) => r.id === mounted.id)) {
+      roots.push(mounted);
+    }
+  }
+
+  roots.sort(
+    (a, b) =>
+      (b.roleLevel ?? 0) - (a.roleLevel ?? 0) ||
+      String(a.name || '').localeCompare(String(b.name || ''))
+  );
 
   return roots;
 }
@@ -46,30 +124,54 @@ module.exports = {
   async tree(req, res) {
     try {
       const users = await User.findAll({
-        attributes: ['id', 'name', 'managerId', 'avatarUrl'],
+        attributes: ['id', 'name', 'managerId', 'avatarUrl', 'sectors', 'isActive'],
         where: { isActive: true },
         include: [
-          { model: Role, as: 'role', attributes: ['name', 'level'] },
+          {
+            model: Role,
+            as: 'role',
+            attributes: ['name', 'level'],
+            required: false,
+          },
         ],
         order: [['name', 'ASC']],
       });
 
-      // transforma para objetos simples (evita getters do Sequelize)
-      const plain = users.map(u => ({
+      const plain = users.map((u) => ({
         id: u.id,
         name: u.name,
         managerId: u.managerId,
         avatarUrl: u.avatarUrl,
-        role: u.role ? { name: u.role.name, level: u.role.level } : null,
+        sectors: u.sectors,
+        isActive: u.isActive,
+        role: u.role
+          ? {
+              name: u.role.name,
+              level: u.role.level,
+            }
+          : null,
       }));
 
+      console.log(
+        'ORG LINKS:',
+        plain.map((u) => ({
+          id: u.id,
+          name: u.name,
+          managerId: u.managerId,
+          role: u.role?.name || null,
+          level: u.role?.level || 0,
+        }))
+      );
+
       const tree = buildTreeFromFlat(plain);
+
       return ok(res, tree);
     } catch (err) {
-      console.error(err);
-      return res
-        .status(500)
-        .json({ error: 'Erro ao montar organograma', details: err.message });
+      console.error('ORG TREE ERROR:', err);
+      return res.status(500).json({
+        error: 'Erro ao montar organograma',
+        details: err.message,
+      });
     }
   },
 };

@@ -6,12 +6,14 @@ const partRequestController = require('../controllers/partRequestController');
 const partRequestItemController = require('../controllers/partRequestItemController');
 
 /**
- * @swagger
- * tags:
- *   name: PartRequests
- *   description: Pedido de peças
+ * rotas públicas
  */
+router.post('/public', partRequestController.create);
+router.get('/public/search', partRequestController.publicSearch);
 
+/**
+ * rotas internas
+ */
 router.post('/', auth(), partRequestController.create);
 router.get('/', auth(), partRequestController.list);
 

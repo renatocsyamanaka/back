@@ -1,9 +1,18 @@
 const router = require('express').Router();
+const { Op } = require('sequelize');
 const auth = require('../middleware/auth');
 const upload = require('../middleware/uploadExcel');
 const XLSX = require('xlsx');
+
 const { Client } = require('../models');
-const { ok, bad } = require('../utils/responses');
+const clientController = require('../controllers/clientController');
+const { ok, bad, created } = require('../utils/responses');
+
+/**
+ * GET /api/clients/autocomplete
+ * Público para tela de solicitação de peças
+ */
+router.get('/autocomplete', clientController.searchAutocomplete);
 
 /**
  * POST /api/clients
@@ -12,12 +21,12 @@ const { ok, bad } = require('../utils/responses');
 router.post('/', auth(), async (req, res) => {
   try {
     const {
-      idCliente,       // ID_cliente
-      name,            // cliente
-      nomeFantasia,    // nome_fantasia
-      documento,       // cpf/cnpj
-      tipoCliente,     // tipo_cliente
-      segmentacao,     // segmentacao
+      idCliente,
+      name,
+      nomeFantasia,
+      documento,
+      tipoCliente,
+      segmentacao,
       estado,
       cidade,
       bairro,
@@ -32,7 +41,6 @@ router.post('/', auth(), async (req, res) => {
       telefone2,
     } = req.body;
 
-    // ✅ se você quer "obrigatório", valide aqui:
     const required = [
       ['idCliente', idCliente],
       ['name', name],
@@ -48,17 +56,26 @@ router.post('/', auth(), async (req, res) => {
       ['telefone1', telefone1],
     ];
 
-    const missing = required.filter(([, v]) => !String(v || '').trim()).map(([k]) => k);
-    if (missing.length) return bad(res, `Campos obrigatórios faltando: ${missing.join(', ')}`);
+    const missing = required
+      .filter(([, v]) => !String(v || '').trim())
+      .map(([k]) => k);
 
-    // evita duplicar pelo ID externo
-    const exists = await Client.findOne({ where: { idCliente: String(idCliente).trim() } });
-    if (exists) return bad(res, 'Já existe um cliente com esse ID_cliente');
+    if (missing.length) {
+      return bad(res, `Campos obrigatórios faltando: ${missing.join(', ')}`);
+    }
+
+    const exists = await Client.findOne({
+      where: { idCliente: String(idCliente).trim() },
+    });
+
+    if (exists) {
+      return bad(res, 'Já existe um cliente com esse ID_cliente');
+    }
 
     const row = await Client.create({
       idCliente: String(idCliente).trim(),
       name: String(name).trim(),
-      nomeFantasia: nomeFantasia ?? null,
+      nomeFantasia: nomeFantasia ? String(nomeFantasia).trim() : null,
       documento: String(documento).trim(),
       tipoCliente: String(tipoCliente).trim(),
       segmentacao: String(segmentacao).trim(),
@@ -66,14 +83,14 @@ router.post('/', auth(), async (req, res) => {
       cidade: String(cidade).trim(),
       bairro: String(bairro).trim(),
       logradouro: String(logradouro).trim(),
-      complemento: complemento ?? null,
+      complemento: complemento ? String(complemento).trim() : null,
       cep: String(cep).trim(),
-      latitude: latitude ?? null,
-      longitude: longitude ?? null,
+      latitude: latitude ? String(latitude).trim() : null,
+      longitude: longitude ? String(longitude).trim() : null,
       email1: String(email1).trim(),
       telefone1: String(telefone1).trim(),
-      email2: email2 ?? null,
-      telefone2: telefone2 ?? null,
+      email2: email2 ? String(email2).trim() : null,
+      telefone2: telefone2 ? String(telefone2).trim() : null,
     });
 
     return created(res, row);
@@ -84,8 +101,7 @@ router.post('/', auth(), async (req, res) => {
 
 /**
  * GET /api/clients
- * Lista SOMENTE as colunas que você quer na tabela
- * (com busca opcional por q)
+ * Lista clientes
  */
 router.get('/', auth(), async (req, res) => {
   try {
@@ -117,25 +133,35 @@ router.get('/', auth(), async (req, res) => {
 
 /**
  * GET /api/clients/:id
- * Detalhe COMPLETO (para o modal Visualizar)
+ * Detalhe completo
  */
 router.get('/:id', auth(), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    if (!Number.isFinite(id) || id <= 0) return bad(res, 'ID inválido');
+
+    if (!Number.isFinite(id) || id <= 0) {
+      return bad(res, 'ID inválido');
+    }
 
     const row = await Client.findByPk(id);
-    if (!row) return bad(res, 'Cliente não encontrado');
+
+    if (!row) {
+      return bad(res, 'Cliente não encontrado');
+    }
 
     return ok(res, row);
   } catch (e) {
     return bad(res, e?.parent?.sqlMessage || e?.message || 'Erro ao carregar cliente');
   }
 });
+
+/**
+ * POST /api/clients/import/stream
+ * Importação via Excel com SSE
+ */
 router.post('/import/stream', auth(), upload.single('file'), async (req, res) => {
   if (!req.file) return bad(res, 'Arquivo não enviado');
 
-  // ✅ SSE headers
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
@@ -151,8 +177,8 @@ router.post('/import/stream', auth(), upload.single('file'), async (req, res) =>
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
-    let created = 0;
-    let updated = 0;
+    let createdCount = 0;
+    let updatedCount = 0;
     let processed = 0;
     const total = rows.length;
     const errors = [];
@@ -166,7 +192,6 @@ router.post('/import/stream', auth(), upload.single('file'), async (req, res) =>
         const idCliente = String(row.ID_cliente || '').trim();
         if (!idCliente) throw new Error('ID_cliente ausente');
 
-        // ✅ mapeia as colunas do excel -> model
         const payload = {
           idCliente,
           name: String(row.cliente || '').trim(),
@@ -188,31 +213,44 @@ router.post('/import/stream', auth(), upload.single('file'), async (req, res) =>
           telefone2: String(row.telefone2 || '').trim() || null,
         };
 
-        // ⚠️ garante que name exista (se sua coluna no banco for NOT NULL)
         if (!payload.name) throw new Error('cliente (name) ausente');
 
         const existing = await Client.findOne({ where: { idCliente } });
 
         if (existing) {
           await existing.update(payload);
-          updated++;
+          updatedCount++;
         } else {
           await Client.create(payload);
-          created++;
+          createdCount++;
         }
       } catch (err) {
-        errors.push({ linha: i + 2, erro: err.message });
+        errors.push({
+          linha: i + 2,
+          erro: err.message,
+        });
       }
 
       processed++;
 
-      // ✅ manda progresso a cada 10 linhas (pra não entupir)
       if (processed % 10 === 0 || processed === total) {
-        send('progress', { processed, total, created, updated });
+        send('progress', {
+          processed,
+          total,
+          created: createdCount,
+          updated: updatedCount,
+        });
       }
     }
 
-    send('done', { total, processed, created, updated, errors });
+    send('done', {
+      total,
+      processed,
+      created: createdCount,
+      updated: updatedCount,
+      errors,
+    });
+
     res.end();
   } catch (err) {
     send('error', { message: err.message || 'Falha ao importar' });

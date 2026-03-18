@@ -15,6 +15,14 @@ News.init(
 
     isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
 
+    // NOVO
+    targetAllSectors: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true,
+      field: 'target_all_sectors',
+    },
+
     createdById: { type: DataTypes.INTEGER, allowNull: true },
   },
   {
@@ -22,7 +30,11 @@ News.init(
     modelName: 'News',
     tableName: 'news',
     timestamps: true,
-    indexes: [{ fields: ['isActive'] }, { fields: ['createdById'] }],
+    indexes: [
+      { fields: ['isActive'] },
+      { fields: ['createdById'] },
+      { fields: ['target_all_sectors'] },
+    ],
   }
 );
 
