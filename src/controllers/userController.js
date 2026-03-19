@@ -8,7 +8,7 @@ const { Op } = require('sequelize');
 /* ======================
    ====== CONSTANTES =====
    ====================== */
-const baseUrl = process.env.BASE_URL;
+const baseUrl = process.env.BASE_URL || 'https://api.projetos-rc.online';
 
 const VALID_SECTORS = [
   'OPERACOES',
