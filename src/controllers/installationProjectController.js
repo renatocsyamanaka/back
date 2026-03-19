@@ -55,20 +55,52 @@ function normalizeIdList(input) {
 
   if (!arr) return [];
 
+  if (typeof arr === 'string') {
+    const trimmed = arr.trim();
+
+    if (!trimmed) return [];
+
+    try {
+      arr = JSON.parse(trimmed);
+    } catch {
+      arr = [trimmed];
+    }
+  }
+
   if (!Array.isArray(arr)) {
     arr = [arr];
   }
 
-  return [...new Set(arr.map(Number).filter(Boolean))];
+  return [
+    ...new Set(
+      arr
+        .map((v) => Number(v))
+        .filter((v) => Number.isInteger(v) && v > 0)
+    ),
+  ];
 }
 
-// dias necessários = caminhões total / previsão por dia
 function calcDaysNeeded(trucksTotal, perDay) {
   if (!perDay || perDay <= 0) return null;
   return Math.ceil((trucksTotal || 0) / perDay);
 }
 
-// supervisor = level 3, coordenador = level 4+
+function isValidDateOnly(value) {
+  if (value == null || value === '') return true;
+  return dayjs(value, 'YYYY-MM-DD', true).isValid();
+}
+
+function normalizeDateOnly(value) {
+  if (value == null || value === '') return null;
+  const str = String(value).slice(0, 10);
+
+  if (!dayjs(str, 'YYYY-MM-DD', true).isValid()) {
+    return null;
+  }
+
+  return str;
+}
+
 async function findCoordinatorIdFromSupervisor(supervisorId) {
   const supervisor = await User.findByPk(supervisorId, {
     attributes: ['id', 'name', 'managerId'],
@@ -102,7 +134,6 @@ async function findCoordinatorIdFromSupervisor(supervisorId) {
   return { coordinatorId: null };
 }
 
-// legado: valida um técnico
 async function validateTechnicianId(technicianId) {
   if (!technicianId) return { technician: null };
 
@@ -114,12 +145,13 @@ async function validateTechnicianId(technicianId) {
   if (!tech) return { error: 'Técnico/Prestador não encontrado' };
 
   const lvl = tech.role?.level || 0;
-  if (lvl !== 1) return { error: 'Usuário selecionado não é técnico/prestador (level 1)' };
+  if (![1, 8].includes(lvl)) {
+    return { error: 'Usuário selecionado não é técnico/prestador válido' };
+  }
 
   return { technician: tech };
 }
 
-// novo: valida vários técnicos
 async function validateTechnicianIds(technicianIds = []) {
   if (!Array.isArray(technicianIds) || !technicianIds.length) {
     return { technicians: [] };
@@ -139,8 +171,8 @@ async function validateTechnicianIds(technicianIds = []) {
     }
 
     const lvl = tech.role?.level || 0;
-    if (lvl !== 1) {
-      return { error: `Usuário ${tech.name} não é técnico/prestador (level 1)` };
+    if (![1, 8].includes(lvl)) {
+      return { error: `Usuário ${tech.name} não é técnico/prestador válido` };
     }
 
     technicians.push(tech);
@@ -164,11 +196,22 @@ async function attachTechniciansToProject(project) {
     return data;
   }
 
-  const techs = await User.findAll({
-    where: { id: technicianIds },
-    attributes: ['id', 'name'],
-    order: [['name', 'ASC']],
-  });
+  let techs = [];
+  try {
+    techs = await User.findAll({
+      where: { id: { [Op.in]: technicianIds } },
+      attributes: ['id', 'name'],
+      order: [['name', 'ASC']],
+    });
+  } catch (err) {
+    console.error('attachTechniciansToProject error:', {
+      technicianIds,
+      message: err?.message,
+      sqlMessage: err?.original?.sqlMessage,
+      sql: err?.sql,
+    });
+    techs = [];
+  }
 
   data.techniciansList = techs.map((t) => ({
     id: t.id,
@@ -191,7 +234,7 @@ async function attachTechniciansToProjects(projects = []) {
         normalizeIdList(row.technicianIds?.length ? row.technicianIds : row.technicianId)
       )
     ),
-  ];
+  ].filter((id) => Number.isInteger(id) && id > 0);
 
   if (!allIds.length) {
     return rows.map((row) => ({
@@ -201,11 +244,27 @@ async function attachTechniciansToProjects(projects = []) {
     }));
   }
 
-  const techs = await User.findAll({
-    where: { id: allIds },
-    attributes: ['id', 'name'],
-    order: [['name', 'ASC']],
-  });
+  let techs = [];
+  try {
+    techs = await User.findAll({
+      where: { id: { [Op.in]: allIds } },
+      attributes: ['id', 'name'],
+      order: [['name', 'ASC']],
+    });
+  } catch (err) {
+    console.error('attachTechniciansToProjects error:', {
+      allIds,
+      message: err?.message,
+      sqlMessage: err?.original?.sqlMessage,
+      sql: err?.sql,
+    });
+
+    return rows.map((row) => ({
+      ...row,
+      techniciansList: [],
+      technicianNames: row.technician ? [row.technician.name] : [],
+    }));
+  }
 
   const techMap = new Map(techs.map((t) => [Number(t.id), { id: t.id, name: t.name }]));
 
@@ -226,7 +285,6 @@ async function attachTechniciansToProjects(projects = []) {
   });
 }
 
-// carregar tudo para detalhe/e-mail
 async function loadProjectWithDetails(projectId) {
   const project = await InstallationProject.findByPk(projectId, {
     include: [
@@ -254,6 +312,13 @@ async function loadProjectWithDetails(projectId) {
 // Schemas
 // =========================================================
 
+const dateOnlyField = Joi.string()
+  .pattern(/^\d{4}-\d{2}-\d{2}$/)
+  .allow(null, '')
+  .messages({
+    'string.pattern.base': 'Use o formato YYYY-MM-DD',
+  });
+
 const startFinishSchema = Joi.object({
   sendEmail: Joi.boolean().default(true),
   emailTo: Joi.alternatives().try(
@@ -272,23 +337,19 @@ const createSchema = Joi.object({
 
   contactName: Joi.string().allow('', null),
 
-  // legado
   contactEmail: Joi.string().email().allow('', null),
-
-  // novo
   contactEmails: Joi.array().items(Joi.string().email()).min(1).required(),
 
   contactPhone: Joi.string().allow('', null),
 
-  startPlannedAt: Joi.date().required(),
+  startPlannedAt: dateOnlyField,
+  endPlannedAt: dateOnlyField,
+
   trucksTotal: Joi.number().integer().min(1).required(),
   equipmentsPerDay: Joi.number().integer().min(1).required(),
   supervisorId: Joi.number().integer().required(),
 
-  // legado
   technicianId: Joi.number().integer().allow(null),
-
-  // novo
   technicianIds: Joi.array().items(Joi.number().integer()).min(1).required(),
 
   notes: Joi.string().allow('', null),
@@ -357,6 +418,17 @@ module.exports = {
     const { error, value } = createSchema.validate(req.body);
     if (error) return bad(res, error.message);
 
+    const startPlannedAt = normalizeDateOnly(value.startPlannedAt);
+    const endPlannedAtInput = normalizeDateOnly(value.endPlannedAt);
+
+    if (!isValidDateOnly(value.startPlannedAt)) {
+      return bad(res, 'Data prevista de início inválida. Use YYYY-MM-DD');
+    }
+
+    if (!isValidDateOnly(value.endPlannedAt)) {
+      return bad(res, 'Data prevista de término inválida. Use YYYY-MM-DD');
+    }
+
     const normalizedEmails = normalizeEmailList(value.contactEmails || value.contactEmail);
     if (!normalizedEmails.length) {
       return bad(res, 'Informe pelo menos um e-mail de contato');
@@ -378,7 +450,13 @@ module.exports = {
     if (coordErr) return bad(res, coordErr);
 
     const daysNeeded = calcDaysNeeded(value.trucksTotal, value.equipmentsPerDay);
-    const endPlannedAt = addBusinessDaysInclusive(value.startPlannedAt, daysNeeded);
+
+    const endPlannedAt =
+      endPlannedAtInput != null
+        ? endPlannedAtInput
+        : (startPlannedAt
+            ? addBusinessDaysInclusive(startPlannedAt, daysNeeded)
+            : null);
 
     const project = await InstallationProject.create({
       title: value.title,
@@ -386,11 +464,13 @@ module.exports = {
       af: value.af ? String(value.af).trim() : null,
 
       contactName: value.contactName ?? null,
-      contactEmail: normalizedEmails[0], // legado
-      contactEmails: normalizedEmails, // novo
+      contactEmail: normalizedEmails[0],
+      contactEmails: normalizedEmails,
       contactPhone: value.contactPhone ?? null,
 
-      startPlannedAt: value.startPlannedAt,
+      startPlannedAt,
+      endPlannedAt,
+
       trucksTotal: value.trucksTotal,
       equipmentsPerDay: value.equipmentsPerDay,
       notes: value.notes ?? null,
@@ -398,8 +478,8 @@ module.exports = {
       supervisorId: value.supervisorId,
       coordinatorId: coordinatorId ?? null,
 
-      technicianId: normalizedTechnicianIds[0], // legado
-      technicianIds: normalizedTechnicianIds, // novo
+      technicianId: normalizedTechnicianIds[0],
+      technicianIds: normalizedTechnicianIds,
 
       createdById: req.user.id,
       updatedById: req.user.id,
@@ -408,7 +488,6 @@ module.exports = {
       trucksDone: 0,
       equipmentsTotal: 0,
       daysEstimated: daysNeeded,
-      endPlannedAt,
     });
 
     const full = await loadProjectWithDetails(project.id);
@@ -424,6 +503,7 @@ module.exports = {
         'title',
         'contactEmails',
         'startPlannedAt',
+        'endPlannedAt',
         'trucksTotal',
         'equipmentsPerDay',
         'supervisorId',
@@ -480,11 +560,22 @@ module.exports = {
 
     const trucksTotal = rest.trucksTotal ?? project.trucksTotal;
     const perDay = rest.equipmentsPerDay ?? project.equipmentsPerDay;
-    const startPlannedAt = rest.startPlannedAt ?? project.startPlannedAt;
-
     const daysNeeded = calcDaysNeeded(trucksTotal, perDay);
     next.daysEstimated = daysNeeded;
-    next.endPlannedAt = addBusinessDaysInclusive(startPlannedAt, daysNeeded);
+
+    if (Object.prototype.hasOwnProperty.call(rest, 'startPlannedAt')) {
+      if (!isValidDateOnly(rest.startPlannedAt)) {
+        return bad(res, 'Data prevista de início inválida. Use YYYY-MM-DD');
+      }
+      next.startPlannedAt = normalizeDateOnly(rest.startPlannedAt);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(rest, 'endPlannedAt')) {
+      if (!isValidDateOnly(rest.endPlannedAt)) {
+        return bad(res, 'Data prevista de término inválida. Use YYYY-MM-DD');
+      }
+      next.endPlannedAt = normalizeDateOnly(rest.endPlannedAt);
+    }
 
     await project.update(next);
 
@@ -538,10 +629,11 @@ module.exports = {
       return bad(res, 'Defina o supervisor do projeto antes de iniciar');
     }
 
-    const technicianIds = Array.isArray(project.technicianIds)
-      ? project.technicianIds
-      : [];
-    if (!technicianIds.length && !project.technicianId) {
+    const technicianIds = normalizeIdList(
+      project.technicianIds?.length ? project.technicianIds : project.technicianId
+    );
+
+    if (!technicianIds.length) {
       return bad(res, 'Defina pelo menos um técnico/prestador antes de iniciar');
     }
 

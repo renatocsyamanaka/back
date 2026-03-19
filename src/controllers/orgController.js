@@ -152,22 +152,10 @@ module.exports = {
           : null,
       }));
 
-      console.log(
-        'ORG LINKS:',
-        plain.map((u) => ({
-          id: u.id,
-          name: u.name,
-          managerId: u.managerId,
-          role: u.role?.name || null,
-          level: u.role?.level || 0,
-        }))
-      );
-
       const tree = buildTreeFromFlat(plain);
 
       return ok(res, tree);
     } catch (err) {
-      console.error('ORG TREE ERROR:', err);
       return res.status(500).json({
         error: 'Erro ao montar organograma',
         details: err.message,

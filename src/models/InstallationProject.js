@@ -11,19 +11,31 @@ InstallationProject.init(
       defaultValue: 'A_INICIAR',
     },
 
-    title: { type: DataTypes.STRING, allowNull: false },
+    title: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
 
     af: {
       type: DataTypes.STRING(50),
       allowNull: true,
     },
 
-    clientId: { type: DataTypes.INTEGER, allowNull: true },
+    clientId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
 
-    contactName: { type: DataTypes.STRING, allowNull: true },
+    contactName: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
 
     // legado
-    contactEmail: { type: DataTypes.STRING, allowNull: false },
+    contactEmail: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
 
     // novo
     contactEmails: {
@@ -32,30 +44,91 @@ InstallationProject.init(
       defaultValue: [],
     },
 
-    contactPhone: { type: DataTypes.STRING, allowNull: true },
+    contactPhone: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
 
-    startPlannedAt: { type: DataTypes.DATE, allowNull: false },
-    startAt: { type: DataTypes.DATE, allowNull: true },
-    endAt: { type: DataTypes.DATE, allowNull: true },
-    endPlannedAt: { type: DataTypes.DATE, allowNull: true },
+    // datas sem hora
+    startPlannedAt: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+    },
 
-    trucksTotal: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
-    trucksDone: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    endPlannedAt: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+    },
 
-    equipmentsTotal: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
-    equipmentsPerDay: { type: DataTypes.INTEGER, allowNull: false },
-    daysEstimated: { type: DataTypes.INTEGER, allowNull: true },
+    // datas com hora
+    startAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
 
-    whatsappGroupName: { type: DataTypes.STRING, allowNull: true },
-    whatsappGroupLink: { type: DataTypes.STRING, allowNull: true },
+    endAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
 
-    notes: { type: DataTypes.TEXT, allowNull: true },
+    trucksTotal: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 1,
+    },
 
-    supervisorId: { type: DataTypes.INTEGER, allowNull: true },
-    coordinatorId: { type: DataTypes.INTEGER, allowNull: true },
+    trucksDone: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+    },
+
+    equipmentsTotal: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+    },
+
+    equipmentsPerDay: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
+
+    daysEstimated: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+
+    whatsappGroupName: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    whatsappGroupLink: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    notes: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+
+    supervisorId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+
+    coordinatorId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
 
     // legado
-    technicianId: { type: DataTypes.INTEGER, allowNull: true },
+    technicianId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
 
     // novo
     technicianIds: {
@@ -64,8 +137,15 @@ InstallationProject.init(
       defaultValue: [],
     },
 
-    createdById: { type: DataTypes.INTEGER, allowNull: false },
-    updatedById: { type: DataTypes.INTEGER, allowNull: true },
+    createdById: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
+
+    updatedById: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
   },
   {
     sequelize,

@@ -5,7 +5,11 @@ class PartRequest extends Model {}
 
 PartRequest.init(
   {
-    id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
+    },
 
     requestNumber: {
       type: DataTypes.STRING(30),
@@ -176,19 +180,39 @@ PartRequest.init(
       type: DataTypes.DATE,
       allowNull: true,
     },
+
     invoiceNumber: {
-    type: DataTypes.STRING(100),
-    allowNull: true,
+      type: DataTypes.STRING(100),
+      allowNull: true,
     },
+
+    visualizado: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+
+    visualizadoPor: {
+      type: DataTypes.STRING(150),
+      allowNull: true,
+    },
+
+    visualizadoEm: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+
     expeditedAt: {
       type: DataTypes.DATE,
       allowNull: true,
     },
+
     isExpedited: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false,
     },
+
     approvedAt: {
       type: DataTypes.DATE,
       allowNull: true,
@@ -219,6 +243,8 @@ PartRequest.init(
       { fields: ['managerId'] },
       { fields: ['naCode'] },
       { fields: ['osCode'] },
+      { fields: ['visualizado'] },
+      { fields: ['visualizadoEm'] },
     ],
   }
 );

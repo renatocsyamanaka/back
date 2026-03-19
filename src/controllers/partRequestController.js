@@ -36,8 +36,8 @@ async function recalculateRequestStatus(partRequestId, transaction) {
   const rejected = items.filter((i) => i.itemStatus === 'REJECTED').length;
   const fulfilled = items.filter((i) => i.itemStatus === 'FULFILLED').length;
   const partiallyFulfilled = items.filter(
-    (i) => i.itemStatus === 'PARTIALLY_FULFILLED'
-  ).length;
+    (i) => i.itemStatus === 'PARTIALLY_FULFILLED')
+    .length;
 
   let newStatus = request.status;
 
@@ -201,6 +201,9 @@ async function create(req, res) {
         managerId: managerId || null,
         status: 'SUBMITTED',
         submittedAt: new Date(),
+        visualizado: false,
+        visualizadoPor: null,
+        visualizadoEm: null,
       },
       { transaction }
     );
@@ -287,6 +290,7 @@ async function list(req, res) {
       managerId,
       mine,
       originType,
+      visualizado,
     } = req.query;
 
     const where = {};
@@ -295,6 +299,10 @@ async function list(req, res) {
     if (clientId) where.clientId = clientId;
     if (managerId) where.managerId = managerId;
     if (originType) where.originType = originType;
+
+    if (typeof visualizado !== 'undefined') {
+      where.visualizado = String(visualizado) === 'true';
+    }
 
     if (requestNumber) {
       where.requestNumber = {
@@ -544,9 +552,7 @@ async function update(req, res) {
     const changes = [];
 
     if ((previousFulfillmentType || null) !== (row.fulfillmentType || null)) {
-      changes.push(
-        `Atendimento: ${previousFulfillmentType || '-'} → ${row.fulfillmentType || '-'}`
-      );
+      changes.push(`Atendimento: ${previousFulfillmentType || '-'} → ${row.fulfillmentType || '-'}`);
     }
 
     if ((previousInvoiceNumber || null) !== (row.invoiceNumber || null)) {
@@ -814,6 +820,64 @@ async function batchApprove(req, res) {
   }
 }
 
+async function marcarComoVisualizado(req, res) {
+  try {
+    const { id } = req.params;
+
+    const pedido = await PartRequest.findByPk(id);
+    if (!pedido) {
+      return res.status(404).json({ message: 'Pedido não encontrado.' });
+    }
+
+    if (!pedido.visualizado) {
+      await pedido.update({
+        visualizado: true,
+        visualizadoPor: req.user?.name || req.user?.nome || 'Usuário',
+        visualizadoEm: new Date(),
+      });
+
+      await PartRequestHistory.create({
+        partRequestId: pedido.id,
+        actionType: 'VIEWED',
+        previousStatus: pedido.status,
+        newStatus: pedido.status,
+        comments: `Pedido visualizado por ${req.user?.name || req.user?.nome || 'Usuário'}.`,
+        performedByUserId: req.user?.id || null,
+        performedByName: req.user?.name || req.user?.nome || 'Usuário',
+        performedByProfile: req.user?.role?.name || 'USUÁRIO',
+      });
+    }
+
+    return res.json({
+      ok: true,
+      data: pedido,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Erro ao marcar pedido como visualizado.',
+      error: error.message,
+    });
+  }
+}
+
+async function countNaoVisualizados(req, res) {
+  try {
+    const count = await PartRequest.count({
+      where: { visualizado: false },
+    });
+
+    return res.json({
+      ok: true,
+      data: { count },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Erro ao contar pedidos não visualizados.',
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   create,
   list,
@@ -821,4 +885,6 @@ module.exports = {
   publicSearch,
   update,
   batchApprove,
+  marcarComoVisualizado,
+  countNaoVisualizados,
 };
