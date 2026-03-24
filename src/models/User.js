@@ -28,6 +28,9 @@ const ALLOWED_PERMISSIONS = [
   'TIMEOFF_VIEW',
   'NEWS_VIEW',
   'NEWS_ADMIN_VIEW',
+
+  'DASHBOARD_ACTIVITY_VIEW',
+  'DELIVERY_REPORTS_VIEW',
 ];
 
 const DEFAULT_SECTORS = ['OPERACOES'];
@@ -118,7 +121,16 @@ User.init(
       type: DataTypes.INTEGER,
       allowNull: true,
     },
+    cargoDescritivo: {
+      type: DataTypes.STRING(150),
+      allowNull: true,
+    },
 
+    ocultarCargo: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
     sectors: {
       type: DataTypes.JSON,
       allowNull: false,

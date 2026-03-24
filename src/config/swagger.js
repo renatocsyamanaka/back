@@ -12,7 +12,7 @@ const options = {
       version: '1.0.0',
       description: 'API de gestão de colaboradores, agendas, requisições e banco de horas.'
     },
-    servers: [{ url: 'https://localhost:3000/api', description: 'Local' }],
+    servers: [{ url: 'http://localhost:3000', description: 'Local' }],
     components: {
       securitySchemes: {
         bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }

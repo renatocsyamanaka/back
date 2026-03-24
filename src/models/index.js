@@ -18,9 +18,14 @@ const InstallationProjectItem = require('./InstallationProjectItem');
 const InstallationProjectProgress = require('./InstallationProjectProgress');
 const InstallationProjectProgressVehicle = require('./InstallationProjectProgressVehicle');
 const UserRegistrationRequest = require('./UserRegistrationRequest');
-
+const DeliveryReport = require('./DeliveryReport');
+const DeliveryReportHistory = require('./DeliveryReportHistory');
+const Demand = require('./Demand');
+const DemandHistory = require('./DemandHistory');
 const News = require('./News');
 const NewsRead = require('./NewsRead');
+const DashboardActivity = require('./DashboardActivity');
+
 
 // NOVOS
 const Sector = require('./Sector');
@@ -93,6 +98,43 @@ NeedAttachment.belongsTo(Need, { as: 'need', foreignKey: 'needId' });
 NeedAttachment.belongsTo(User, { as: 'uploadedBy', foreignKey: 'uploadedById' });
 User.hasMany(NeedAttachment, { as: 'needAttachments', foreignKey: 'uploadedById' });
 
+// ----------------- Atividades --------------------
+DashboardActivity.belongsTo(User, {
+  as: 'responsavel',
+  foreignKey: 'responsavelId',
+});
+User.hasMany(DashboardActivity, {
+  as: 'dashboardActivitiesResponsible',
+  foreignKey: 'responsavelId',
+});
+
+DashboardActivity.belongsTo(User, {
+  as: 'createdBy',
+  foreignKey: 'createdById',
+});
+User.hasMany(DashboardActivity, {
+  as: 'dashboardActivitiesCreated',
+  foreignKey: 'createdById',
+});
+
+DashboardActivity.belongsTo(User, {
+  as: 'updatedBy',
+  foreignKey: 'updatedById',
+});
+User.hasMany(DashboardActivity, {
+  as: 'dashboardActivitiesUpdated',
+  foreignKey: 'updatedById',
+});
+
+DashboardActivity.belongsTo(User, {
+  as: 'deletedBy',
+  foreignKey: 'deletedById',
+});
+User.hasMany(DashboardActivity, {
+  as: 'dashboardActivitiesDeleted',
+  foreignKey: 'deletedById',
+});
+
 // ----------------- Part Requests -----------------
 PartRequest.hasMany(PartRequestItem, {
   as: 'items',
@@ -162,7 +204,63 @@ Client.hasMany(PartRequest, {
   as: 'partRequests',
   foreignKey: 'clientId',
 });
+// -----------------Demandas---------------
+Demand.hasMany(DemandHistory, {
+  as: 'history',
+  foreignKey: 'demandId',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE',
+});
 
+DemandHistory.belongsTo(Demand, {
+  as: 'demand',
+  foreignKey: 'demandId',
+});
+
+Demand.belongsTo(User, {
+  as: 'responsavel',
+  foreignKey: 'responsavelId',
+});
+User.hasMany(Demand, {
+  as: 'demandsResponsible',
+  foreignKey: 'responsavelId',
+});
+
+Demand.belongsTo(User, {
+  as: 'createdBy',
+  foreignKey: 'createdById',
+});
+User.hasMany(Demand, {
+  as: 'demandsCreated',
+  foreignKey: 'createdById',
+});
+
+Demand.belongsTo(User, {
+  as: 'updatedBy',
+  foreignKey: 'updatedById',
+});
+User.hasMany(Demand, {
+  as: 'demandsUpdated',
+  foreignKey: 'updatedById',
+});
+
+Demand.belongsTo(User, {
+  as: 'deletedBy',
+  foreignKey: 'deletedById',
+});
+User.hasMany(Demand, {
+  as: 'demandsDeleted',
+  foreignKey: 'deletedById',
+});
+
+DemandHistory.belongsTo(User, {
+  as: 'performedByUser',
+  foreignKey: 'performedByUserId',
+});
+User.hasMany(DemandHistory, {
+  as: 'demandHistories',
+  foreignKey: 'performedByUserId',
+});
 // ----------------- News -----------------
 News.belongsTo(User, {
   as: 'creator',
@@ -231,7 +329,54 @@ NewsSector.belongsTo(Sector, {
   as: 'sector',
   foreignKey: 'sectorId',
 });
+// ----------------- Delivery Reports -----------------
+DeliveryReport.hasMany(DeliveryReportHistory, {
+  as: 'history',
+  foreignKey: 'deliveryReportId',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE',
+});
 
+DeliveryReportHistory.belongsTo(DeliveryReport, {
+  as: 'deliveryReport',
+  foreignKey: 'deliveryReportId',
+});
+
+DeliveryReport.belongsTo(User, {
+  as: 'createdBy',
+  foreignKey: 'createdById',
+});
+User.hasMany(DeliveryReport, {
+  as: 'deliveryReportsCreated',
+  foreignKey: 'createdById',
+});
+
+DeliveryReport.belongsTo(User, {
+  as: 'updatedBy',
+  foreignKey: 'updatedById',
+});
+User.hasMany(DeliveryReport, {
+  as: 'deliveryReportsUpdated',
+  foreignKey: 'updatedById',
+});
+
+DeliveryReport.belongsTo(User, {
+  as: 'deletedBy',
+  foreignKey: 'deletedById',
+});
+User.hasMany(DeliveryReport, {
+  as: 'deliveryReportsDeleted',
+  foreignKey: 'deletedById',
+});
+
+DeliveryReportHistory.belongsTo(User, {
+  as: 'performedByUser',
+  foreignKey: 'performedByUserId',
+});
+User.hasMany(DeliveryReportHistory, {
+  as: 'deliveryReportHistories',
+  foreignKey: 'performedByUserId',
+});
 // ----------------- Vinculo Parte item -----------------
 PartCatalog.belongsTo(User, {
   as: 'createdBy',
@@ -331,4 +476,9 @@ module.exports = {
   PartRequestHistory,
   PartCatalog,
   UserRegistrationRequest,
+  DeliveryReport,
+  DeliveryReportHistory,
+  Demand,
+  DemandHistory,
+  DashboardActivity,
 };

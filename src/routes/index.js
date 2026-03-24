@@ -51,5 +51,8 @@ mount('/news',       './news.routes');
 mount('/installation-projects',       './installationProjects.routes');
 mount('/parts', './part-catalog.routes');
 mount('/user-registration-requests', './userRegistrationRequest.routes');
+mount('/delivery-reports', './delivery-reports.routes');
+mount('/demands', './demands.routes');
+mount('/dashboard-activities', './dashboard-activities.routes');
 
 module.exports = router;

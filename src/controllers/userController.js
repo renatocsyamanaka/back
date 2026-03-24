@@ -36,6 +36,10 @@ const VALID_PERMISSIONS = [
   'TIMEOFF_VIEW',
   'NEWS_VIEW',
   'NEWS_ADMIN_VIEW',
+  'DELIVERY_REPORTS_VIEW',
+  'DELIVERY_REPORTS_ADMIN',
+  'DASHBOARD_ACTIVITY_VIEW',
+  'DASHBOARD_ACTIVITY_ADMIN',
 ];
 
 const DEFAULT_PERMISSIONS = [
@@ -75,6 +79,10 @@ function serializeUser(userInstance) {
     serviceAreaName: payload.serviceAreaName ?? null,
     tipoAtendimento: payload.tipoAtendimento ?? null,
     tipoAtendimentoDescricao: payload.tipoAtendimentoDescricao ?? null,
+
+    cargoDescritivo: payload.cargoDescritivo ?? null,
+    ocultarCargo: !!payload.ocultarCargo,
+
     role: payload.role
       ? {
           id: payload.role.id,
@@ -205,6 +213,10 @@ function enrichUserPayload(userInstance) {
   payload.permissions = Array.isArray(payload.permissions) && payload.permissions.length > 0
     ? payload.permissions
     : DEFAULT_PERMISSIONS;
+
+  payload.cargoDescritivo = payload.cargoDescritivo ?? null;
+  payload.ocultarCargo = !!payload.ocultarCargo;
+
   return payload;
 }
 
@@ -236,6 +248,9 @@ const workerSchema = Joi.object({
   serviceAreaName: Joi.string().allow('', null),
 
   tipoAtendimento: Joi.string().valid('FX', 'VL', 'FV').allow('', null),
+
+  cargoDescritivo: Joi.string().max(150).allow('', null),
+  ocultarCargo: Joi.boolean().default(false),
 
   addressStreet: Joi.string().required(),
   addressNumber: Joi.string().allow(''),
@@ -280,6 +295,9 @@ const userSchema = Joi.object({
   serviceAreaCode: Joi.string().allow('', null),
   serviceAreaName: Joi.string().allow('', null),
   tipoAtendimento: Joi.string().valid('FX', 'VL', 'FV').allow('', null),
+
+  cargoDescritivo: Joi.string().max(150).allow('', null),
+  ocultarCargo: Joi.boolean().default(false),
 });
 
 const updateSchema = Joi.object({
@@ -309,6 +327,9 @@ const updateSchema = Joi.object({
   serviceAreaCode: Joi.string().allow('', null),
   serviceAreaName: Joi.string().allow('', null),
   tipoAtendimento: Joi.string().valid('FX', 'VL', 'FV').allow('', null),
+
+  cargoDescritivo: Joi.string().max(150).allow('', null),
+  ocultarCargo: Joi.boolean(),
 
   addressStreet: Joi.string().allow('', null),
   addressNumber: Joi.string().allow('', null),
@@ -423,6 +444,8 @@ async function create(req, res) {
       ...value,
       sectors: body.sectors,
       permissions: body.permissions,
+      cargoDescritivo: value.cargoDescritivo?.trim() || null,
+      ocultarCargo: !!value.ocultarCargo,
       password_hash: value.password,
       loginEnabled: true,
     });
@@ -527,7 +550,7 @@ async function createWorker(req, res) {
 const mapPerson = (u) => ({
   id: u.id,
   nome: u.name,
-  cargo: u.role?.name || '—',
+  cargo: u.ocultarCargo ? '—' : (u.cargoDescritivo || u.role?.name || '—'),
   avatarUrl: u.avatarUrl || null,
   sectors: Array.isArray(u.sectors) && u.sectors.length > 0 ? u.sectors : ['OPERACOES'],
   permissions: Array.isArray(u.permissions) && u.permissions.length > 0 ? u.permissions : DEFAULT_PERMISSIONS,
@@ -817,7 +840,13 @@ async function update(req, res) {
     if ('lng' in value) {
       value.lng = value.lng === '' || value.lng === undefined ? null : Number(value.lng);
     }
+    if ('cargoDescritivo' in value) {
+      value.cargoDescritivo = value.cargoDescritivo?.trim() || null;
+    }
 
+    if ('ocultarCargo' in value) {
+      value.ocultarCargo = !!value.ocultarCargo;
+    }
     Object.assign(user, value);
     await user.save();
 
@@ -1280,7 +1309,7 @@ async function getStructure(req, res) {
     const mapPersonLocal = (u) => ({
       id: u.id,
       nome: u.name,
-      cargo: u.role?.name || '—',
+      cargo: u.ocultarCargo ? '—' : (u.cargoDescritivo || u.role?.name || '—'),
       avatarUrl: u.avatarUrl || null,
       sectors: Array.isArray(u.sectors) && u.sectors.length > 0 ? u.sectors : ['OPERACOES'],
       permissions: Array.isArray(u.permissions) && u.permissions.length > 0 ? u.permissions : DEFAULT_PERMISSIONS,
