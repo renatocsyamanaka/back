@@ -250,10 +250,65 @@ function buildYearRanges(years = []) {
 function normalizeStatusText(value) {
   return String(value || '').trim().toUpperCase();
 }
+function startOfDaySafe(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function resolveStatusEntrega(payload = {}) {
+  const statusManual = normalizeStatusText(payload.statusEntrega);
+  const previsao = startOfDaySafe(payload.previsaoEntrega);
+  const entrega = startOfDaySafe(payload.dataEntrega);
+  const hoje = startOfDaySafe(new Date());
+
+  if (statusManual.includes('CANCEL')) return 'CANCELADA';
+  if (statusManual.includes('DEVOL')) return 'DEVOLVIDA';
+  if (statusManual.includes('TRANS')) return 'EM TRANSITO';
+  if (statusManual.includes('ROTA')) return 'EM ROTA';
+  if (statusManual.includes('PEND')) return 'PENDENTE';
+
+  if (previsao && entrega) {
+    return entrega.getTime() > previsao.getTime() ? 'FORA DO PRAZO' : 'NO PRAZO';
+  }
+
+  if (previsao && !entrega) {
+    return hoje.getTime() > previsao.getTime() ? 'FORA DO PRAZO' : 'NO PRAZO';
+  }
+
+  if (statusManual.includes('NO PRAZO')) return 'NO PRAZO';
+  if (statusManual.includes('FORA DO PRAZO')) return 'FORA DO PRAZO';
+  if (statusManual.includes('ATRAS')) return 'FORA DO PRAZO';
+  if (statusManual.includes('ENTREG')) return 'ENTREGUE';
+
+  return statusManual || 'PENDENTE';
+}
+
+function applyComputedStatusEntrega(payload = {}) {
+  return {
+    ...payload,
+    statusEntrega: resolveStatusEntrega(payload),
+  };
+}
 
 function buildStatusEntregaCondition(statusEntrega) {
   const normalized = normalizeStatusText(statusEntrega);
   if (!normalized) return null;
+
+  if (normalized.includes('FORA DO PRAZO') || normalized.includes('ATRAS')) {
+    return {
+      [Op.or]: [
+        { [Op.like]: '%FORA DO PRAZO%' },
+        { [Op.like]: '%ATRAS%' },
+      ],
+    };
+  }
+
+  if (normalized.includes('NO PRAZO')) {
+    return { [Op.like]: '%NO PRAZO%' };
+  }
 
   if (normalized.includes('CANCEL')) {
     return { [Op.like]: '%CANCEL%' };
@@ -261,10 +316,6 @@ function buildStatusEntregaCondition(statusEntrega) {
 
   if (normalized.includes('ENTREG')) {
     return { [Op.like]: '%ENTREG%' };
-  }
-
-  if (normalized.includes('ATRAS')) {
-    return { [Op.like]: '%ATRAS%' };
   }
 
   if (normalized.includes('DEVOL')) {
@@ -290,7 +341,7 @@ exports.create = async (req, res) => {
   const transaction = await sequelize.transaction();
 
   try {
-    const payload = buildPayload(req.body);
+    const payload = applyComputedStatusEntrega(buildPayload(req.body));
 
     if (!payload.cte) {
       await transaction.rollback();
@@ -579,7 +630,7 @@ exports.update = async (req, res) => {
       });
     }
 
-    const payload = buildPayload(req.body);
+    const payload = applyComputedStatusEntrega(buildPayload(req.body));
 
     const duplicate = await findExistingDeliveryReport({
       cte: payload.cte,
