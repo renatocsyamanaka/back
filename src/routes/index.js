@@ -1,11 +1,8 @@
-// src/routes/index.js
 const express = require('express');
 const router = express.Router();
 
 function pickRouter(mod) {
-  // Express Router é uma função (req,res,next)
   if (typeof mod === 'function') return mod;
-  // Suporte a ESM: export default router
   if (mod && typeof mod.default === 'function') return mod.default;
   return null;
 }
@@ -21,38 +18,40 @@ function mount(path, file) {
 
   const r = pickRouter(mod);
   if (!r) {
-    console.error(
-      `[routes] ${file} não exporta um Router válido. Corrija o arquivo para fazer: module.exports = router`
-    );
+    console.error(`[routes] ${file} não exporta um Router válido.`);
     throw new TypeError(`Arquivo ${file} não exporta um Router`);
   }
 
   router.use(path, r);
-  // opcional: log
-  // console.log(`[routes] mounted ${path} -> ${file}`);
 }
 
-// Monte apenas o que existir no seu projeto:
-mount('/auth',        './auth.routes');
-mount('/users',       './users.routes');
-mount('/org',         './org.routes');
-mount('/locations',   './locations.routes');
-mount('/clients',     './clients.routes');
-mount('/techtypes',   './techtypes.routes');
-mount('/tech-types',  './techtypes.routes'); 
-mount('/needs',       './needs.routes');
+mount('/auth', './auth.routes');
+mount('/users', './users.routes');
+mount('/org', './org.routes');
+mount('/locations', './locations.routes');
+mount('/clients', './clients.routes');
+mount('/techtypes', './techtypes.routes');
+mount('/tech-types', './techtypes.routes');
+mount('/needs', './needs.routes');
 mount('/part-requests', './part-requests.routes');
-mount('/geocode',       './geocode.routes');
+mount('/geocode', './geocode.routes');
 mount('/assignments', './assignments.routes');
-mount('/overtime',    './overtime.routes');
-mount('/timeoff',     './timeoff.routes');
-mount('/tasks',       './tasks.routes');
-mount('/news',       './news.routes');
-mount('/installation-projects',       './installationProjects.routes');
+mount('/overtime', './overtime.routes');
+mount('/timeoff', './timeoff.routes');
+mount('/tasks', './tasks.routes');
+mount('/news', './news.routes');
+
+/* IMPORTANTE: dashboard antes da rota genérica */
+mount('/installation-projects/dashboard', './installationProjectsDashboard.routes');
+mount('/installation-projects', './installationProjects.routes');
+mount('/installation-projects/geolocation', './installationProjectGeolocation.routes');
+
 mount('/parts', './part-catalog.routes');
 mount('/user-registration-requests', './userRegistrationRequest.routes');
 mount('/delivery-reports', './delivery-reports.routes');
 mount('/demands', './demands.routes');
 mount('/dashboard-activities', './dashboard-activities.routes');
+mount('/need-homologation', './need-homologation.routes');
+mount('/need-ata', './need-ata.routes');
 
 module.exports = router;

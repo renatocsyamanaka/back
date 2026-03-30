@@ -77,11 +77,8 @@ User.init(
     email: {
       type: DataTypes.STRING,
       allowNull: true,
-      unique: true,
       validate: {
-        isEmail: {
-          msg: 'E-mail inválido',
-        },
+        isEmail: true,
       },
     },
 

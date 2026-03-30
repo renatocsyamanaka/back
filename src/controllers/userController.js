@@ -1,13 +1,7 @@
-/* src/controllers/userController.js */
-/* global fetch */
 const Joi = require('joi');
 const { User, Role, Location } = require('../models');
 const { ok, created, bad, notFound } = require('../utils/responses');
 const { Op } = require('sequelize');
-
-/* ======================
-   ====== CONSTANTES =====
-   ====================== */
 const baseUrl = process.env.BASE_URL || 'https://api.projetos-rc.online';
 
 const VALID_SECTORS = [
@@ -100,10 +94,6 @@ function serializeUser(userInstance) {
     location: payload.location || null,
   };
 }
-/* ======================
-   ====== HELPERS =======
-   ====================== */
-
 function normRoleName(s) {
   return (s || '')
     .normalize('NFD')
@@ -219,11 +209,6 @@ function enrichUserPayload(userInstance) {
 
   return payload;
 }
-
-/* ======================
-   ====== SCHEMAS =======
-   ====================== */
-
 const workerSchema = Joi.object({
   name: Joi.string().required(),
   phone: Joi.string().allow('', null),
@@ -356,9 +341,6 @@ const addressSchema = Joi.object({
   autoGeocode: Joi.boolean().default(true),
 });
 
-/* =============================
-   ===== Helpers de endereço ===
-   ============================= */
 function buildAddressString(v) {
   return [
     `${v.addressStreet || ''} ${v.addressNumber || ''}`.trim(),
@@ -406,10 +388,6 @@ async function cepLookup(req, res) {
     return bad(res, 'Erro ao buscar CEP');
   }
 }
-
-/* ======================
-   ===== Controllers ====
-   ====================== */
 
 async function create(req, res) {
   try {
@@ -591,12 +569,6 @@ async function list(_req, res) {
   }
 }
 
-/**
- * ROTA PÚBLICA
- * Retorna opções para o formulário de pré-cadastro:
- * - cargos
- * - gestores ativos (supervisor para cima)
- */
 async function listPublicSignupOptions(_req, res) {
   try {
     const [roles, users] = await Promise.all([

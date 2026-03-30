@@ -2,19 +2,12 @@ const router = require('express').Router();
 const auth = require('../middleware/auth');
 const requireLevel = require('../middleware/rbac');
 const ctrl = require('../controllers/needController');
+const needInternalDocumentController = require('../controllers/needInternalDocumentController');
 
-// ✅ anexos (multer + model)
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { Need, NeedAttachment } = require('../models');
-
-/**
- * @swagger
- * tags:
- *   name: Needs
- *   description: Requisições de técnicos por localidade (inclui captação/homologação e anexos)
- */
 
 /** =========================
  *  Helpers uploads
@@ -23,6 +16,9 @@ function ensureDir(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
 
+/** =========================
+ *  UPLOAD POR NEED
+ *  ========================= */
 const storage = multer.diskStorage({
   destination: (req, _file, cb) => {
     const needId = req.params.id;
@@ -39,145 +35,129 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
+  limits: { fileSize: 15 * 1024 * 1024 },
 });
 
-/**
- * @swagger
- * /api/needs:
- *   post:
- *     summary: Cria uma requisição de técnico
- *     tags: [Needs]
- *     security: [{ bearerAuth: [] }]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [requestedLocationText]
- *             properties:
- *               requestedLocationText: { type: string, example: "Av. Paulista, 1000 - São Paulo/SP" }
- *               requestedCity: { type: string, nullable: true }
- *               requestedState: { type: string, nullable: true }
- *               requestedCep: { type: string, nullable: true }
- *               requestedLat: { type: number, nullable: true }
- *               requestedLng: { type: number, nullable: true }
- *               requestedName: { type: string, example: "Técnico a definir" }
- *               techTypeId: { type: number, nullable: true }
- *               notes: { type: string, nullable: true }
- *   get:
- *     summary: Lista requisições
- *     tags: [Needs]
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - in: query
- *         name: status
- *         schema: { type: string, example: "OPEN" }
- *       - in: query
- *         name: techTypeId
- *         schema: { type: number }
- *       - in: query
- *         name: requesterId
- *         schema: { type: number }
- *       - in: query
- *         name: q
- *         schema: { type: string }
- */
-router.post('/', auth(), requireLevel(2), ctrl.create);
-router.get('/', auth(), ctrl.list);
+/** =========================
+ *  UPLOAD GLOBAL - DOCUMENTOS INTERNOS
+ *  ========================= */
+const internalStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    const dir = path.join(process.cwd(), 'uploads', 'needs', 'internal-documents');
+    ensureDir(dir);
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '');
+    const safe = `${Date.now()}-${Math.random().toString(16).slice(2)}${ext}`;
+    cb(null, safe);
+  },
+});
 
-/**
- * @swagger
- * /api/needs/requesters:
- *   get:
- *     summary: Lista solicitantes (para preencher o select do filtro)
- *     tags: [Needs]
- *     security: [{ bearerAuth: [] }]
- */
-router.get('/requesters', auth(), ctrl.requesters);
-
-/**
- * @swagger
- * /api/needs/{id}/status:
- *   patch:
- *     summary: Atualiza status da requisição
- *     tags: [Needs]
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: number }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [status]
- *             properties:
- *               status:
- *                 type: string
- *                 enum: [OPEN, IN_PROGRESS, FULFILLED, CANCELLED]
- */
-router.patch('/:id/status', auth(), requireLevel(2), ctrl.updateStatus);
-
-/**
- * @swagger
- * /api/needs/{id}/provider:
- *   patch:
- *     summary: Atualiza dados do prestador (captação/homologação)
- *     tags: [Needs]
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: number }
- */
-router.patch('/:id/provider', auth(), requireLevel(2), ctrl.updateProvider);
-
-/**
- * @swagger
- * /api/needs/{id}/address:
- *   patch:
- *     summary: Atualiza endereço e coordenadas (lat/lng)
- *     tags: [Needs]
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: number }
- */
-router.patch('/:id/address', auth(), requireLevel(2), ctrl.updateAddress);
+const uploadInternal = multer({
+  storage: internalStorage,
+  limits: { fileSize: 15 * 1024 * 1024 },
+});
 
 /** =========================
- *  ✅ ANEXOS
+ *  ROTAS PRINCIPAIS
+ *  ========================= */
+router.post('/', auth(), requireLevel(2), ctrl.create);
+router.get('/', auth(), ctrl.list);
+router.get('/requesters', auth(), ctrl.requesters);
+router.patch('/:id/status', auth(), requireLevel(2), ctrl.updateStatus);
+router.patch('/:id/provider', auth(), requireLevel(2), ctrl.updateProvider);
+router.patch('/:id/address', auth(), requireLevel(2), ctrl.updateAddress);
+
+/** ============================================================
+ * DOCUMENTOS INTERNOS GLOBAIS
+ * ============================================================ */
+router.get(
+  '/internal-documents',
+  auth(),
+  needInternalDocumentController.list
+);
+
+router.post(
+  '/internal-documents',
+  auth(),
+  requireLevel(2),
+  uploadInternal.single('file'),
+  needInternalDocumentController.create
+);
+
+router.delete(
+  '/internal-documents/:id',
+  auth(),
+  requireLevel(2),
+  needInternalDocumentController.remove
+);
+
+/** =========================
+ *  ANEXOS / HOMOLOGAÇÃO POR NEED
  *  ========================= */
 
+const NEED_ATTACHMENT_KINDS = ['CONTRATO', 'DOCUMENTO', 'FOTO', 'HOMOLOGACAO', 'OUTRO'];
+
+function normalizeAttachment(row) {
+  return {
+    id: row.id,
+    needId: row.needId,
+    kind: row.kind,
+    title: row.title || row.originalName,
+    description: row.description || null,
+    originalName: row.originalName,
+    fileName: row.fileName,
+    mimeType: row.mimeType,
+    size: row.size,
+    url: row.url,
+    uploadedById: row.uploadedById,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function getUploadedFiles(req) {
+  if (Array.isArray(req.files) && req.files.length) return req.files;
+  if (req.files && typeof req.files === 'object') {
+    const grouped = [];
+    Object.values(req.files).forEach((arr) => {
+      if (Array.isArray(arr)) grouped.push(...arr);
+    });
+    if (grouped.length) return grouped;
+  }
+  if (req.file) return [req.file];
+  return [];
+}
+
+const uploadAttachments = upload.fields([
+  { name: 'file', maxCount: 1 },
+  { name: 'files', maxCount: 20 },
+]);
+
 /**
- * @swagger
- * /api/needs/{id}/attachments:
- *   get:
- *     summary: Lista anexos da Need
- *     tags: [Needs]
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: number }
+ * LISTAR ANEXOS
+ * GET /api/needs/:id/attachments?kind=HOMOLOGACAO
  */
 router.get('/:id/attachments', auth(), async (req, res) => {
   try {
     const needId = Number(req.params.id);
+    const where = { needId };
+
+    if (req.query.kind) {
+      const kind = String(req.query.kind).toUpperCase();
+      if (!NEED_ATTACHMENT_KINDS.includes(kind)) {
+        return res.status(400).json({ error: 'kind inválido' });
+      }
+      where.kind = kind;
+    }
+
     const rows = await NeedAttachment.findAll({
-      where: { needId },
+      where,
       order: [['createdAt', 'DESC']],
     });
-    return res.json(rows);
+
+    return res.json(rows.map(normalizeAttachment));
   } catch (e) {
     console.error('[needs.attachments.list]', e);
     return res.status(500).json({ error: 'Falha ao listar anexos' });
@@ -185,61 +165,60 @@ router.get('/:id/attachments', auth(), async (req, res) => {
 });
 
 /**
- * @swagger
- * /api/needs/{id}/attachments:
- *   post:
- *     summary: Anexa um arquivo na Need
- *     tags: [Needs]
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: number }
- *     requestBody:
- *       required: true
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             required: [file]
- *             properties:
- *               kind:
- *                 type: string
- *                 enum: [CONTRATO, DOCUMENTO, FOTO, OUTRO]
- *                 example: DOCUMENTO
- *               file:
- *                 type: string
- *                 format: binary
+ * UPLOAD DE ANEXOS
+ * POST /api/needs/:id/attachments
  */
-router.post('/:id/attachments', auth(), requireLevel(2), upload.single('file'), async (req, res) => {
+router.post('/:id/attachments', auth(), requireLevel(2), uploadAttachments, async (req, res) => {
   try {
     const needId = Number(req.params.id);
 
     const need = await Need.findByPk(needId);
     if (!need) return res.status(404).json({ error: 'Need não encontrada' });
 
-    if (!req.file) return res.status(400).json({ error: 'Arquivo não enviado (campo "file")' });
+    const files = getUploadedFiles(req);
+    if (!files.length) {
+      return res.status(400).json({ error: 'Arquivo não enviado (campo "file" ou "files")' });
+    }
 
     const kind = String(req.body?.kind || 'DOCUMENTO').toUpperCase();
-    const allowed = ['CONTRATO', 'DOCUMENTO', 'FOTO', 'OUTRO'];
-    if (!allowed.includes(kind)) return res.status(400).json({ error: 'kind inválido' });
+    if (!NEED_ATTACHMENT_KINDS.includes(kind)) {
+      return res.status(400).json({ error: 'kind inválido' });
+    }
 
-    // ✅ melhor guardar URL RELATIVA (facilita prod/homolog sem BASE_URL)
-    const url = `/uploads/needs/${needId}/${req.file.filename}`;
+    const title = req.body?.title ? String(req.body.title).trim() : null;
+    const description = req.body?.description ? String(req.body.description).trim() : null;
 
-    const row = await NeedAttachment.create({
-      needId,
-      kind,
-      originalName: req.file.originalname,
-      fileName: req.file.filename,
-      mimeType: req.file.mimetype,
-      size: req.file.size,
-      url,
-      uploadedById: req.user?.id || null,
+    const createdRows = await Promise.all(
+      files.map((file, index) => {
+        const resolvedTitle =
+          files.length > 1
+            ? (title ? `${title} ${index + 1}` : file.originalname)
+            : (title || file.originalname);
+
+        return NeedAttachment.create({
+          needId,
+          kind,
+          title: resolvedTitle,
+          description,
+          originalName: file.originalname,
+          fileName: file.filename,
+          mimeType: file.mimetype,
+          size: file.size,
+          url: `/uploads/needs/${needId}/${file.filename}`,
+          uploadedById: req.user?.id || null,
+        });
+      })
+    );
+
+    if (createdRows.length === 1) {
+      return res.json(normalizeAttachment(createdRows[0]));
+    }
+
+    return res.json({
+      ok: true,
+      count: createdRows.length,
+      items: createdRows.map(normalizeAttachment),
     });
-
-    return res.json(row);
   } catch (e) {
     console.error('[needs.attachments.upload]', e);
     return res.status(500).json({ error: 'Falha ao anexar arquivo' });
@@ -247,21 +226,8 @@ router.post('/:id/attachments', auth(), requireLevel(2), upload.single('file'), 
 });
 
 /**
- * @swagger
- * /api/needs/{id}/attachments/{attachmentId}:
- *   delete:
- *     summary: Remove um anexo da Need
- *     tags: [Needs]
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: number }
- *       - in: path
- *         name: attachmentId
- *         required: true
- *         schema: { type: number }
+ * EXCLUIR ANEXO
+ * DELETE /api/needs/:id/attachments/:attachmentId
  */
 router.delete('/:id/attachments/:attachmentId', auth(), requireLevel(2), async (req, res) => {
   try {
@@ -271,7 +237,6 @@ router.delete('/:id/attachments/:attachmentId', auth(), requireLevel(2), async (
     const row = await NeedAttachment.findOne({ where: { id: attachmentId, needId } });
     if (!row) return res.status(404).json({ error: 'Anexo não encontrado' });
 
-    // remove do disco (best effort)
     try {
       const pathname = row.url || `/uploads/needs/${needId}/${row.fileName}`;
       const rel = pathname.replace(/^\/+/, '');
@@ -286,6 +251,111 @@ router.delete('/:id/attachments/:attachmentId', auth(), requireLevel(2), async (
   } catch (e) {
     console.error('[needs.attachments.delete]', e);
     return res.status(500).json({ error: 'Falha ao remover anexo' });
+  }
+});
+
+/**
+ * LISTAR SOMENTE DOCUMENTOS DE HOMOLOGAÇÃO
+ * GET /api/needs/:id/homologation-documents
+ */
+router.get('/:id/homologation-documents', auth(), async (req, res) => {
+  try {
+    const needId = Number(req.params.id);
+    const rows = await NeedAttachment.findAll({
+      where: { needId, kind: 'HOMOLOGACAO' },
+      order: [['createdAt', 'DESC']],
+    });
+
+    return res.json(rows.map(normalizeAttachment));
+  } catch (e) {
+    console.error('[needs.homologation.list]', e);
+    return res.status(500).json({ error: 'Falha ao listar documentos de homologação' });
+  }
+});
+
+/**
+ * UPLOAD SOMENTE DE HOMOLOGAÇÃO
+ * POST /api/needs/:id/homologation-documents
+ */
+router.post('/:id/homologation-documents', auth(), requireLevel(2), uploadAttachments, async (req, res) => {
+  try {
+    const needId = Number(req.params.id);
+
+    const need = await Need.findByPk(needId);
+    if (!need) return res.status(404).json({ error: 'Need não encontrada' });
+
+    const files = getUploadedFiles(req);
+    if (!files.length) {
+      return res.status(400).json({ error: 'Arquivo não enviado (campo "file" ou "files")' });
+    }
+
+    const title = req.body?.title ? String(req.body.title).trim() : null;
+    const description = req.body?.description ? String(req.body.description).trim() : null;
+
+    const createdRows = await Promise.all(
+      files.map((file, index) => {
+        const resolvedTitle =
+          files.length > 1
+            ? (title ? `${title} ${index + 1}` : file.originalname)
+            : (title || file.originalname);
+
+        return NeedAttachment.create({
+          needId,
+          kind: 'HOMOLOGACAO',
+          title: resolvedTitle,
+          description,
+          originalName: file.originalname,
+          fileName: file.filename,
+          mimeType: file.mimetype,
+          size: file.size,
+          url: `/uploads/needs/${needId}/${file.filename}`,
+          uploadedById: req.user?.id || null,
+        });
+      })
+    );
+
+    return res.json({
+      ok: true,
+      count: createdRows.length,
+      items: createdRows.map(normalizeAttachment),
+    });
+  } catch (e) {
+    console.error('[needs.homologation.upload]', e);
+    return res.status(500).json({ error: 'Falha ao enviar documentos de homologação' });
+  }
+});
+
+/**
+ * EXCLUIR DOCUMENTO DE HOMOLOGAÇÃO
+ * DELETE /api/needs/:id/homologation-documents/:attachmentId
+ */
+router.delete('/:id/homologation-documents/:attachmentId', auth(), requireLevel(2), async (req, res) => {
+  try {
+    const needId = Number(req.params.id);
+    const attachmentId = Number(req.params.attachmentId);
+
+    const row = await NeedAttachment.findOne({
+      where: { id: attachmentId, needId, kind: 'HOMOLOGACAO' },
+    });
+
+    if (!row) {
+      return res.status(404).json({ error: 'Documento de homologação não encontrado' });
+    }
+
+    try {
+      const pathname = row.url || `/uploads/needs/${needId}/${row.fileName}`;
+      const rel = pathname.replace(/^\/+/, '');
+      const filePath = path.resolve(process.cwd(), rel);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch (err) {
+      console.warn('[needs.homologation.delete] falha ao apagar arquivo:', err?.message);
+    }
+
+    await row.destroy();
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('[needs.homologation.delete]', e);
+    return res.status(500).json({ error: 'Falha ao remover documento de homologação' });
   }
 });
 

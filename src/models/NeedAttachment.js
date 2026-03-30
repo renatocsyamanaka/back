@@ -10,7 +10,7 @@ NeedAttachment.init(
     needId: { type: DataTypes.INTEGER, allowNull: false },
 
     kind: {
-      type: DataTypes.ENUM('CONTRATO', 'DOCUMENTO', 'FOTO', 'OUTRO'),
+      type: DataTypes.ENUM('CONTRATO', 'DOCUMENTO', 'FOTO', 'HOMOLOGACAO', 'OUTRO'),
       allowNull: false,
       defaultValue: 'DOCUMENTO',
     },
@@ -22,6 +22,9 @@ NeedAttachment.init(
     url: { type: DataTypes.STRING, allowNull: false },
 
     uploadedById: { type: DataTypes.INTEGER, allowNull: true },
+
+    title: { type: DataTypes.STRING, allowNull: true },
+    description: { type: DataTypes.TEXT, allowNull: true },
   },
   {
     sequelize,

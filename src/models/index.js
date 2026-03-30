@@ -25,11 +25,15 @@ const DemandHistory = require('./DemandHistory');
 const News = require('./News');
 const NewsRead = require('./NewsRead');
 const DashboardActivity = require('./DashboardActivity');
-
-
-// NOVOS
+const HomologationDocumentType = require('./HomologationDocumentType');
+const NeedRegistrationInvite = require('./NeedRegistrationInvite');
+const NeedRegistration = require('./NeedRegistration');
+const NeedRegistrationDocument = require('./NeedRegistrationDocument');
+const NeedInternalDocument = require('./NeedInternalDocument');
 const Sector = require('./Sector');
 const NewsSector = require('./NewsSector');
+const AtaRegistration = require('./AtaRegistration');
+const AtaDocument = require('./AtaDocument');
 
 // Solicitação Peças
 const PartRequest = require('./PartRequest');
@@ -60,6 +64,126 @@ Sector.hasMany(User, {
 User.belongsTo(Sector, {
   as: 'sector',
   foreignKey: 'sectorId',
+});
+
+// ----------------- Need -> homologação -----------------
+Need.hasMany(NeedRegistrationInvite, {
+  as: 'registrationInvites',
+  foreignKey: 'needId',
+  onDelete: 'CASCADE',
+});
+NeedRegistrationInvite.belongsTo(Need, {
+  as: 'need',
+  foreignKey: 'needId',
+});
+
+User.hasMany(NeedRegistrationInvite, {
+  as: 'needRegistrationInvitesCreated',
+  foreignKey: 'createdById',
+});
+NeedRegistrationInvite.belongsTo(User, {
+  as: 'createdBy',
+  foreignKey: 'createdById',
+});
+Need.hasOne(AtaRegistration, {
+  foreignKey: 'needId',
+  as: 'ataRegistration',
+});
+AtaRegistration.belongsTo(Need, {
+  foreignKey: 'needId',
+  as: 'need',
+});
+
+AtaRegistration.hasMany(AtaDocument, {
+  foreignKey: 'ataRegistrationId',
+  as: 'documents',
+});
+AtaDocument.belongsTo(AtaRegistration, {
+  foreignKey: 'ataRegistrationId',
+  as: 'registration',
+});
+
+User.hasMany(AtaRegistration, {
+  foreignKey: 'reviewedById',
+  as: 'reviewedAtaRegistrations',
+});
+AtaRegistration.belongsTo(User, {
+  foreignKey: 'reviewedById',
+  as: 'reviewedBy',
+});
+
+User.hasMany(AtaDocument, {
+  foreignKey: 'reviewedById',
+  as: 'reviewedAtaDocuments',
+});
+AtaDocument.belongsTo(User, {
+  foreignKey: 'reviewedById',
+  as: 'reviewedBy',
+});
+Need.hasOne(NeedRegistration, {
+  as: 'registration',
+  foreignKey: 'needId',
+  onDelete: 'CASCADE',
+});
+NeedRegistration.belongsTo(Need, {
+  as: 'need',
+  foreignKey: 'needId',
+});
+
+NeedRegistrationInvite.hasOne(NeedRegistration, {
+  as: 'registration',
+  foreignKey: 'inviteId',
+  onDelete: 'CASCADE',
+});
+NeedRegistration.belongsTo(NeedRegistrationInvite, {
+  as: 'invite',
+  foreignKey: 'inviteId',
+});
+
+User.hasMany(NeedRegistration, {
+  as: 'needRegistrationsReviewed',
+  foreignKey: 'reviewedById',
+});
+NeedRegistration.belongsTo(User, {
+  as: 'reviewedBy',
+  foreignKey: 'reviewedById',
+});
+
+NeedRegistration.hasMany(NeedRegistrationDocument, {
+  as: 'documents',
+  foreignKey: 'registrationId',
+  onDelete: 'CASCADE',
+});
+NeedRegistrationDocument.belongsTo(NeedRegistration, {
+  as: 'registration',
+  foreignKey: 'registrationId',
+});
+
+HomologationDocumentType.hasMany(NeedRegistrationDocument, {
+  as: 'registrationDocuments',
+  foreignKey: 'documentTypeId',
+});
+NeedRegistrationDocument.belongsTo(HomologationDocumentType, {
+  as: 'documentType',
+  foreignKey: 'documentTypeId',
+});
+
+User.hasMany(NeedRegistrationDocument, {
+  as: 'needRegistrationDocumentsReviewed',
+  foreignKey: 'reviewedById',
+});
+NeedRegistrationDocument.belongsTo(User, {
+  as: 'reviewedBy',
+  foreignKey: 'reviewedById',
+});
+
+User.hasMany(Need, {
+  as: 'needsHomologationReviewed',
+  foreignKey: 'homologationReviewedById',
+});
+Need.belongsTo(User, {
+  as: 'homologationReviewedBy',
+  foreignKey: 'homologationReviewedById',
 });
 
 // ----------------- Assignments -----------------
@@ -94,9 +218,12 @@ Need.hasMany(NeedAttachment, {
 });
 NeedAttachment.belongsTo(Need, { as: 'need', foreignKey: 'needId' });
 
-// opcional: quem anexou
 NeedAttachment.belongsTo(User, { as: 'uploadedBy', foreignKey: 'uploadedById' });
 User.hasMany(NeedAttachment, { as: 'needAttachments', foreignKey: 'uploadedById' });
+
+
+NeedInternalDocument.belongsTo(User, {  as: 'uploadedBy',  foreignKey: 'uploadedById',});
+User.hasMany(NeedInternalDocument, {  as: 'needInternalDocuments',  foreignKey: 'uploadedById',});
 
 // ----------------- Atividades --------------------
 DashboardActivity.belongsTo(User, {
@@ -204,7 +331,8 @@ Client.hasMany(PartRequest, {
   as: 'partRequests',
   foreignKey: 'clientId',
 });
-// -----------------Demandas---------------
+
+// ----------------- Demandas ---------------
 Demand.hasMany(DemandHistory, {
   as: 'history',
   foreignKey: 'demandId',
@@ -261,6 +389,7 @@ User.hasMany(DemandHistory, {
   as: 'demandHistories',
   foreignKey: 'performedByUserId',
 });
+
 // ----------------- News -----------------
 News.belongsTo(User, {
   as: 'creator',
@@ -329,6 +458,7 @@ NewsSector.belongsTo(Sector, {
   as: 'sector',
   foreignKey: 'sectorId',
 });
+
 // ----------------- Delivery Reports -----------------
 DeliveryReport.hasMany(DeliveryReportHistory, {
   as: 'history',
@@ -377,6 +507,7 @@ User.hasMany(DeliveryReportHistory, {
   as: 'deliveryReportHistories',
   foreignKey: 'performedByUserId',
 });
+
 // ----------------- Vinculo Parte item -----------------
 PartCatalog.belongsTo(User, {
   as: 'createdBy',
@@ -442,12 +573,6 @@ InstallationProjectProgress.belongsTo(InstallationProject, { as: 'project', fore
 InstallationProjectProgress.belongsTo(User, { as: 'author', foreignKey: 'createdById' });
 User.hasMany(InstallationProjectProgress, { as: 'installationProgressAuthored', foreignKey: 'createdById' });
 
-// IMPORTANTE:
-// A associação InstallationProjectProgress -> InstallationProjectProgressVehicle
-// com alias "vehicles" já existe no seu sistema/model.
-// Por isso NÃO repetimos aqui, para evitar:
-// "You have used the alias vehicles in two separate associations."
-
 // ----------------- Exports -----------------
 module.exports = {
   sequelize,
@@ -481,4 +606,11 @@ module.exports = {
   Demand,
   DemandHistory,
   DashboardActivity,
+  HomologationDocumentType,
+  NeedRegistrationInvite,
+  NeedRegistration,
+  NeedRegistrationDocument,
+  NeedInternalDocument,
+  AtaRegistration,
+  AtaDocument,
 };

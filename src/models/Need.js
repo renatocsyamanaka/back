@@ -59,6 +59,41 @@ Need.init(
       allowNull: true,
       defaultValue: 'PENDENTE',
     },
+    homologationStatus: {
+      type: DataTypes.ENUM(
+        'NOT_SENT',
+        'LINK_SENT',
+        'IN_PROGRESS',
+        'SUBMITTED',
+        'UNDER_REVIEW',
+        'ADJUSTMENT_REQUIRED',
+        'APPROVED',
+        'REJECTED'
+      ),
+      allowNull: false,
+      defaultValue: 'NOT_SENT',
+    },
+
+    homologationLinkSentAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+
+    homologationSubmittedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+
+    homologationReviewedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+
+    homologationReviewedById: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+
   },
   {
     sequelize,
