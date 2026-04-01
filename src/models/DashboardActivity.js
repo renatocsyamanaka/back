@@ -26,7 +26,10 @@ DashboardActivity.init(
       type: DataTypes.STRING(200),
       allowNull: false,
     },
-
+    tipoResponsabilidade: {
+      type: DataTypes.ENUM('DASHBOARD', 'PROGRAMACAO', 'BOOT', 'PLANILHA', 'OUTROS'),
+      allowNull: true,
+    },
     periodicidade: {
       type: DataTypes.ENUM('DIARIO', 'SEMANAL', 'MENSAL'),
       allowNull: false,
@@ -73,7 +76,10 @@ DashboardActivity.init(
       type: DataTypes.INTEGER,
       allowNull: true,
     },
-
+      dashboardLink: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
     deletedAt: {
       type: DataTypes.DATE,
       allowNull: true,
