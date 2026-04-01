@@ -493,7 +493,133 @@ module.exports = {
     const full = await loadProjectWithDetails(project.id);
     return created(res, full);
   },
+  
+  async updateProgress(req, res) {
+    const schema = Joi.object({
+      date: Joi.string()
+        .pattern(/^\d{4}-\d{2}-\d{2}$/)
+        .required()
+        .messages({
+          'string.pattern.base': 'date inválida. Use YYYY-MM-DD',
+          'any.required': 'Informe a date (YYYY-MM-DD)',
+        }),
+      notes: Joi.string().allow('', null),
+      vehicles: Joi.array()
+        .items(
+          Joi.object({
+            plate: Joi.string().trim().min(5).max(10).required(),
+            serial: Joi.string().trim().min(3).max(60).required(),
+          })
+        )
+        .min(1)
+        .required(),
+    }).options({ abortEarly: false, stripUnknown: true });
 
+    const { error, value } = schema.validate(req.body);
+    if (error) return bad(res, error.message);
+
+    const progress = await InstallationProjectProgress.findByPk(req.params.progressId);
+    if (!progress) return notFound(res, 'Progresso não encontrado');
+
+    const project = await InstallationProject.findByPk(progress.projectId);
+    if (!project) return notFound(res, 'Projeto não encontrado');
+
+    const t = await sequelize.transaction();
+
+    try {
+      const trucksDoneToday = value.vehicles.length;
+
+      await progress.update(
+        {
+          date: value.date,
+          notes: value.notes,
+          trucksDoneToday,
+        },
+        { transaction: t }
+      );
+
+      await InstallationProjectProgressVehicle.destroy({
+        where: { progressId: progress.id },
+        transaction: t,
+      });
+
+      await InstallationProjectProgressVehicle.bulkCreate(
+        value.vehicles.map((v) => ({
+          progressId: progress.id,
+          plate: String(v.plate).trim().toUpperCase(),
+          serial: String(v.serial).trim(),
+        })),
+        { transaction: t }
+      );
+
+      const all = await InstallationProjectProgress.findAll({
+        where: { projectId: project.id },
+        transaction: t,
+      });
+
+      const trucksDone = all.reduce((sum, item) => sum + (item.trucksDoneToday || 0), 0);
+
+      await project.update(
+        {
+          trucksDone,
+          updatedById: req.user.id,
+        },
+        { transaction: t }
+      );
+
+      await t.commit();
+
+      const full = await InstallationProjectProgress.findByPk(progress.id, {
+        include: [{ model: InstallationProjectProgressVehicle, as: 'vehicles' }],
+      });
+
+      return ok(res, full);
+    } catch (err) {
+      await t.rollback();
+      return bad(res, err.message || 'Erro ao atualizar progresso');
+    }
+  },
+
+  async removeProgress(req, res) {
+    const progress = await InstallationProjectProgress.findByPk(req.params.progressId);
+    if (!progress) return notFound(res, 'Progresso não encontrado');
+
+    const project = await InstallationProject.findByPk(progress.projectId);
+    if (!project) return notFound(res, 'Projeto não encontrado');
+
+    const t = await sequelize.transaction();
+
+    try {
+      await InstallationProjectProgressVehicle.destroy({
+        where: { progressId: progress.id },
+        transaction: t,
+      });
+
+      await progress.destroy({ transaction: t });
+
+      const all = await InstallationProjectProgress.findAll({
+        where: { projectId: project.id },
+        transaction: t,
+      });
+
+      const trucksDone = all.reduce((sum, item) => sum + (item.trucksDoneToday || 0), 0);
+
+      await project.update(
+        {
+          trucksDone,
+          updatedById: req.user.id,
+        },
+        { transaction: t }
+      );
+
+      await t.commit();
+
+      return ok(res, { message: 'Progresso excluído com sucesso.' });
+    } catch (err) {
+      await t.rollback();
+      return bad(res, err.message || 'Erro ao excluir progresso');
+    }
+  },
   async update(req, res) {
     const project = await InstallationProject.findByPk(req.params.id);
     if (!project) return notFound(res, 'Projeto não encontrado');

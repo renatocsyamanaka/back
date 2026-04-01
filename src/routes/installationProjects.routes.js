@@ -432,6 +432,8 @@ const ctrl = require('../controllers/installationProjectController');
 // ✅ Analista+ (2)
 router.get('/', auth(), requireLevel(2), ctrl.list);
 router.get('/:id', auth(), requireLevel(2), ctrl.getById);
+router.put('/:id/progress/:progressId', auth(), requireLevel(2), ctrl.updateProgress);
+router.delete('/:id/progress/:progressId', auth(), requireLevel(2), ctrl.removeProgress);
 
 router.post('/', auth(), requireLevel(2), ctrl.create);
 router.patch('/:id', auth(), requireLevel(2), ctrl.update);
