@@ -437,6 +437,7 @@ router.delete('/:id/progress/:progressId', auth(), requireLevel(2), ctrl.removeP
 router.put('/:id/items/:itemId', auth(), requireLevel(2), ctrl.updateItem);
 router.post('/', auth(), requireLevel(2), ctrl.create);
 router.patch('/:id', auth(), requireLevel(2), ctrl.update);
+router.delete('/:id/items/:itemId', auth(), requireLevel(2), ctrl.removeItem);
 
 router.patch('/:id/whatsapp', auth(), requireLevel(2), ctrl.setWhatsApp);
 

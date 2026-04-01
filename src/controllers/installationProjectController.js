@@ -553,6 +553,23 @@ module.exports = {
 
     return ok(res, item);
   },
+  async removeItem(req, res) {
+    const project = await InstallationProject.findByPk(req.params.id);
+    if (!project) return notFound(res, 'Projeto não encontrado');
+
+    const item = await InstallationProjectItem.findOne({
+      where: {
+        id: req.params.itemId,
+        projectId: project.id,
+      },
+    });
+
+    if (!item) return notFound(res, 'Item não encontrado');
+
+    await item.destroy();
+
+    return ok(res, { message: 'Item excluído com sucesso.' });
+  },
   async updateProgress(req, res) {
     const schema = Joi.object({
       date: Joi.string()
