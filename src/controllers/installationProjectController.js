@@ -493,7 +493,66 @@ module.exports = {
     const full = await loadProjectWithDetails(project.id);
     return created(res, full);
   },
-  
+  async updateItem(req, res) {
+    const schema = Joi.object({
+      equipmentName: Joi.string().trim().required(),
+      equipmentCode: Joi.string().allow('', null),
+      qty: Joi.number().integer().min(1).required(),
+    }).options({ abortEarly: false, stripUnknown: true });
+
+    const { error, value } = schema.validate(req.body);
+    if (error) return bad(res, error.message);
+
+    const project = await InstallationProject.findByPk(req.params.id);
+    if (!project) return notFound(res, 'Projeto não encontrado');
+
+    const item = await InstallationProjectItem.findOne({
+      where: {
+        id: req.params.itemId,
+        projectId: project.id,
+      },
+    });
+
+    if (!item) return notFound(res, 'Item não encontrado');
+
+    await item.update({
+      equipmentName: value.equipmentName,
+      equipmentCode: value.equipmentCode || null,
+      qty: value.qty,
+    });
+
+    return ok(res, item);
+  },
+  async updateItem(req, res) {
+    const schema = Joi.object({
+      equipmentName: Joi.string().trim().required(),
+      equipmentCode: Joi.string().allow('', null),
+      qty: Joi.number().integer().min(1).required(),
+    }).options({ abortEarly: false, stripUnknown: true });
+
+    const { error, value } = schema.validate(req.body);
+    if (error) return bad(res, error.message);
+
+    const project = await InstallationProject.findByPk(req.params.id);
+    if (!project) return notFound(res, 'Projeto não encontrado');
+
+    const item = await InstallationProjectItem.findOne({
+      where: {
+        id: req.params.itemId,
+        projectId: project.id,
+      },
+    });
+
+    if (!item) return notFound(res, 'Item não encontrado');
+
+    await item.update({
+      equipmentName: value.equipmentName,
+      equipmentCode: value.equipmentCode || null,
+      qty: value.qty,
+    });
+
+    return ok(res, item);
+  },
   async updateProgress(req, res) {
     const schema = Joi.object({
       date: Joi.string()
