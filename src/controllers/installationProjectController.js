@@ -350,7 +350,7 @@ const createSchema = Joi.object({
   supervisorId: Joi.number().integer().required(),
 
   technicianId: Joi.number().integer().allow(null),
-  technicianIds: Joi.array().items(Joi.number().integer()).min(1).required(),
+  technicianIds: Joi.array().items(Joi.number().integer()).optional(),
 
   notes: Joi.string().allow('', null),
   coordinatorId: Joi.number().integer().allow(null),
@@ -438,10 +438,6 @@ module.exports = {
       value.technicianIds || (value.technicianId ? [value.technicianId] : [])
     );
 
-    if (!normalizedTechnicianIds.length) {
-      return bad(res, 'Informe pelo menos um técnico/prestador');
-    }
-
     const { error: techErr } = await validateTechnicianIds(normalizedTechnicianIds);
     if (techErr) return bad(res, techErr);
 
@@ -478,8 +474,8 @@ module.exports = {
       supervisorId: value.supervisorId,
       coordinatorId: coordinatorId ?? null,
 
-      technicianId: normalizedTechnicianIds[0],
-      technicianIds: normalizedTechnicianIds,
+      technicianId: normalizedTechnicianIds[0] || null,
+      technicianIds: normalizedTechnicianIds.length ? normalizedTechnicianIds : [],
 
       createdById: req.user.id,
       updatedById: req.user.id,
@@ -741,15 +737,11 @@ module.exports = {
         rest.technicianIds || (rest.technicianId ? [rest.technicianId] : [])
       );
 
-      if (!normalizedTechnicianIds.length) {
-        return bad(res, 'Informe pelo menos um técnico/prestador');
-      }
-
       const { error: techErr } = await validateTechnicianIds(normalizedTechnicianIds);
       if (techErr) return bad(res, techErr);
 
-      next.technicianIds = normalizedTechnicianIds;
-      next.technicianId = normalizedTechnicianIds[0];
+      next.technicianIds = normalizedTechnicianIds.length ? normalizedTechnicianIds : [];
+      next.technicianId = normalizedTechnicianIds[0] || null;
     }
 
     if (rest.supervisorId) {
