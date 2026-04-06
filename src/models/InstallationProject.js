@@ -26,18 +26,26 @@ InstallationProject.init(
       allowNull: true,
     },
 
+    dailyGoal: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+
+    weeklyGoal: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+
     contactName: {
       type: DataTypes.STRING,
       allowNull: true,
     },
 
-    // legado
     contactEmail: {
       type: DataTypes.STRING,
       allowNull: false,
     },
 
-    // novo
     contactEmails: {
       type: DataTypes.JSON,
       allowNull: true,
@@ -49,7 +57,6 @@ InstallationProject.init(
       allowNull: true,
     },
 
-    // datas sem hora
     startPlannedAt: {
       type: DataTypes.DATEONLY,
       allowNull: true,
@@ -60,7 +67,6 @@ InstallationProject.init(
       allowNull: true,
     },
 
-    // datas com hora
     startAt: {
       type: DataTypes.DATE,
       allowNull: true,
@@ -124,17 +130,41 @@ InstallationProject.init(
       allowNull: true,
     },
 
-    // legado
     technicianId: {
       type: DataTypes.INTEGER,
       allowNull: true,
     },
 
-    // novo
     technicianIds: {
       type: DataTypes.JSON,
       allowNull: true,
       defaultValue: [],
+    },
+
+    // NOVO: localização própria do projeto
+    requestedLocationText: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    requestedCity: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    requestedState: {
+      type: DataTypes.STRING(2),
+      allowNull: true,
+    },
+    requestedCep: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+    },
+    requestedLat: {
+      type: DataTypes.FLOAT,
+      allowNull: true,
+    },
+    requestedLng: {
+      type: DataTypes.FLOAT,
+      allowNull: true,
     },
 
     createdById: {

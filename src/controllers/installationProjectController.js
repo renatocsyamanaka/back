@@ -1,6 +1,5 @@
-// src/controllers/installationProjectController.js
 const Joi = require('joi');
-const { Op } = require('sequelize');
+const { Op, fn, col } = require('sequelize');
 const dayjs = require('dayjs');
 const sequelize = require('../db');
 
@@ -132,24 +131,6 @@ async function findCoordinatorIdFromSupervisor(supervisorId) {
   }
 
   return { coordinatorId: null };
-}
-
-async function validateTechnicianId(technicianId) {
-  if (!technicianId) return { technician: null };
-
-  const tech = await User.findByPk(technicianId, {
-    attributes: ['id', 'name'],
-    include: [{ model: Role, as: 'role', attributes: ['level', 'name'] }],
-  });
-
-  if (!tech) return { error: 'Técnico/Prestador não encontrado' };
-
-  const lvl = tech.role?.level || 0;
-  if (![1, 8].includes(lvl)) {
-    return { error: 'Usuário selecionado não é técnico/prestador válido' };
-  }
-
-  return { technician: tech };
 }
 
 async function validateTechnicianIds(technicianIds = []) {
@@ -303,9 +284,35 @@ async function loadProjectWithDetails(projectId) {
         ],
       },
     ],
+    order: [
+      [{ model: InstallationProjectProgress, as: 'progress' }, 'date', 'ASC'],
+      [{ model: InstallationProjectProgress, as: 'progress' }, 'id', 'ASC'],
+    ],
   });
 
   return attachTechniciansToProject(project);
+}
+
+async function recalcProjectStats(projectId, transaction) {
+  const rows = await InstallationProjectProgress.findAll({
+    where: { projectId },
+    transaction,
+  });
+
+  const trucksDone = rows.reduce((sum, item) => {
+    const completed = Number(item.completedInstallations ?? item.trucksDoneToday ?? 0);
+    return sum + completed;
+  }, 0);
+
+  await InstallationProject.update(
+    { trucksDone },
+    {
+      where: { id: projectId },
+      transaction,
+    }
+  );
+
+  return { trucksDone };
 }
 
 // =========================================================
@@ -336,10 +343,8 @@ const createSchema = Joi.object({
   af: Joi.string().max(50).allow('', null),
 
   contactName: Joi.string().allow('', null),
-
   contactEmail: Joi.string().email().allow('', null),
   contactEmails: Joi.array().items(Joi.string().email()).min(1).required(),
-
   contactPhone: Joi.string().allow('', null),
 
   startPlannedAt: dateOnlyField,
@@ -347,19 +352,30 @@ const createSchema = Joi.object({
 
   trucksTotal: Joi.number().integer().min(1).required(),
   equipmentsPerDay: Joi.number().integer().min(1).required(),
-  supervisorId: Joi.number().integer().required(),
 
+  dailyGoal: Joi.number().integer().min(0).allow(null),
+  weeklyGoal: Joi.number().integer().min(0).allow(null),
+
+  supervisorId: Joi.number().integer().required(),
   technicianId: Joi.number().integer().allow(null),
   technicianIds: Joi.array().items(Joi.number().integer()).optional(),
 
   notes: Joi.string().allow('', null),
   coordinatorId: Joi.number().integer().allow(null),
+
+  requestedLocationText: Joi.string().allow('', null),
+  requestedCity: Joi.string().allow('', null),
+  requestedState: Joi.string().max(2).allow('', null),
+  requestedCep: Joi.string().allow('', null),
+  requestedLat: Joi.number().allow(null),
+  requestedLng: Joi.number().allow(null),
 }).options({ abortEarly: false, stripUnknown: true });
 
 const listSchema = Joi.object({
   status: Joi.string().valid('A_INICIAR', 'INICIADO', 'FINALIZADO').allow(null),
   q: Joi.string().allow('', null),
   mine: Joi.boolean().default(false),
+  delayed: Joi.boolean().allow(null),
 }).options({ abortEarly: false, stripUnknown: true });
 
 const emailSendSchema = Joi.object({
@@ -368,6 +384,34 @@ const emailSendSchema = Joi.object({
     Joi.array().items(Joi.string().email()).min(1)
   ).allow('', null),
   emailCc: Joi.array().items(Joi.string().email()).allow(null),
+}).options({ abortEarly: false, stripUnknown: true });
+
+const progressSchema = Joi.object({
+  date: Joi.string()
+    .pattern(/^\d{4}-\d{2}-\d{2}$/)
+    .required()
+    .messages({
+      'string.pattern.base': 'date inválida. Use YYYY-MM-DD',
+      'any.required': 'Informe a date (YYYY-MM-DD)',
+    }),
+  notes: Joi.string().allow('', null),
+
+  plannedInstallations: Joi.number().integer().min(0).allow(null),
+  completedInstallations: Joi.number().integer().min(0).allow(null),
+  failedInstallations: Joi.number().integer().min(0).default(0),
+
+  lat: Joi.number().allow(null),
+  lng: Joi.number().allow(null),
+
+  vehicles: Joi.array()
+    .items(
+      Joi.object({
+        plate: Joi.string().trim().min(5).max(10).required(),
+        serial: Joi.string().trim().min(3).max(60).required(),
+      })
+    )
+    .min(1)
+    .required(),
 }).options({ abortEarly: false, stripUnknown: true });
 
 // =========================================================
@@ -382,6 +426,11 @@ module.exports = {
     const where = {};
     if (value.status) where.status = value.status;
     if (value.mine) where.createdById = req.user.id;
+
+    if (value.delayed === true) {
+      where.status = { [Op.ne]: 'FINALIZADO' };
+      where.endPlannedAt = { [Op.lt]: dayjs().format('YYYY-MM-DD') };
+    }
 
     if (value.q) {
       where[Op.or] = [
@@ -450,248 +499,55 @@ module.exports = {
     const endPlannedAt =
       endPlannedAtInput != null
         ? endPlannedAtInput
-        : (startPlannedAt
-            ? addBusinessDaysInclusive(startPlannedAt, daysNeeded)
-            : null);
+        : startPlannedAt
+          ? addBusinessDaysInclusive(startPlannedAt, daysNeeded)
+          : null;
 
-    const project = await InstallationProject.create({
-      title: value.title,
-      clientId: value.clientId ?? null,
-      af: value.af ? String(value.af).trim() : null,
+      const project = await InstallationProject.create({
+        title: value.title,
+        clientId: value.clientId ?? null,
+        af: value.af ? String(value.af).trim() : null,
 
-      contactName: value.contactName ?? null,
-      contactEmail: normalizedEmails[0],
-      contactEmails: normalizedEmails,
-      contactPhone: value.contactPhone ?? null,
+        contactName: value.contactName ?? null,
+        contactEmail: normalizedEmails[0],
+        contactEmails: normalizedEmails,
+        contactPhone: value.contactPhone ?? null,
 
-      startPlannedAt,
-      endPlannedAt,
+        startPlannedAt,
+        endPlannedAt,
 
-      trucksTotal: value.trucksTotal,
-      equipmentsPerDay: value.equipmentsPerDay,
-      notes: value.notes ?? null,
+        trucksTotal: value.trucksTotal,
+        equipmentsPerDay: value.equipmentsPerDay,
+        dailyGoal: value.dailyGoal ?? null,
+        weeklyGoal: value.weeklyGoal ?? null,
+        notes: value.notes ?? null,
 
-      supervisorId: value.supervisorId,
-      coordinatorId: coordinatorId ?? null,
+        supervisorId: value.supervisorId,
+        coordinatorId: coordinatorId ?? null,
 
-      technicianId: normalizedTechnicianIds[0] || null,
-      technicianIds: normalizedTechnicianIds.length ? normalizedTechnicianIds : [],
+        technicianId: normalizedTechnicianIds[0] || null,
+        technicianIds: normalizedTechnicianIds.length ? normalizedTechnicianIds : [],
 
-      createdById: req.user.id,
-      updatedById: req.user.id,
+        requestedLocationText: value.requestedLocationText ?? null,
+        requestedCity: value.requestedCity ?? null,
+        requestedState: value.requestedState ?? null,
+        requestedCep: value.requestedCep ?? null,
+        requestedLat: value.requestedLat ?? null,
+        requestedLng: value.requestedLng ?? null,
 
-      status: 'A_INICIAR',
-      trucksDone: 0,
-      equipmentsTotal: 0,
-      daysEstimated: daysNeeded,
-    });
+        createdById: req.user.id,
+        updatedById: req.user.id,
+
+        status: 'A_INICIAR',
+        trucksDone: 0,
+        equipmentsTotal: 0,
+        daysEstimated: daysNeeded,
+      });
 
     const full = await loadProjectWithDetails(project.id);
     return created(res, full);
   },
-  async updateItem(req, res) {
-    const schema = Joi.object({
-      equipmentName: Joi.string().trim().required(),
-      equipmentCode: Joi.string().allow('', null),
-      qty: Joi.number().integer().min(1).required(),
-    }).options({ abortEarly: false, stripUnknown: true });
 
-    const { error, value } = schema.validate(req.body);
-    if (error) return bad(res, error.message);
-
-    const project = await InstallationProject.findByPk(req.params.id);
-    if (!project) return notFound(res, 'Projeto não encontrado');
-
-    const item = await InstallationProjectItem.findOne({
-      where: {
-        id: req.params.itemId,
-        projectId: project.id,
-      },
-    });
-
-    if (!item) return notFound(res, 'Item não encontrado');
-
-    await item.update({
-      equipmentName: value.equipmentName,
-      equipmentCode: value.equipmentCode || null,
-      qty: value.qty,
-    });
-
-    return ok(res, item);
-  },
-  async updateItem(req, res) {
-    const schema = Joi.object({
-      equipmentName: Joi.string().trim().required(),
-      equipmentCode: Joi.string().allow('', null),
-      qty: Joi.number().integer().min(1).required(),
-    }).options({ abortEarly: false, stripUnknown: true });
-
-    const { error, value } = schema.validate(req.body);
-    if (error) return bad(res, error.message);
-
-    const project = await InstallationProject.findByPk(req.params.id);
-    if (!project) return notFound(res, 'Projeto não encontrado');
-
-    const item = await InstallationProjectItem.findOne({
-      where: {
-        id: req.params.itemId,
-        projectId: project.id,
-      },
-    });
-
-    if (!item) return notFound(res, 'Item não encontrado');
-
-    await item.update({
-      equipmentName: value.equipmentName,
-      equipmentCode: value.equipmentCode || null,
-      qty: value.qty,
-    });
-
-    return ok(res, item);
-  },
-  async removeItem(req, res) {
-    const project = await InstallationProject.findByPk(req.params.id);
-    if (!project) return notFound(res, 'Projeto não encontrado');
-
-    const item = await InstallationProjectItem.findOne({
-      where: {
-        id: req.params.itemId,
-        projectId: project.id,
-      },
-    });
-
-    if (!item) return notFound(res, 'Item não encontrado');
-
-    await item.destroy();
-
-    return ok(res, { message: 'Item excluído com sucesso.' });
-  },
-  async updateProgress(req, res) {
-    const schema = Joi.object({
-      date: Joi.string()
-        .pattern(/^\d{4}-\d{2}-\d{2}$/)
-        .required()
-        .messages({
-          'string.pattern.base': 'date inválida. Use YYYY-MM-DD',
-          'any.required': 'Informe a date (YYYY-MM-DD)',
-        }),
-      notes: Joi.string().allow('', null),
-      vehicles: Joi.array()
-        .items(
-          Joi.object({
-            plate: Joi.string().trim().min(5).max(10).required(),
-            serial: Joi.string().trim().min(3).max(60).required(),
-          })
-        )
-        .min(1)
-        .required(),
-    }).options({ abortEarly: false, stripUnknown: true });
-
-    const { error, value } = schema.validate(req.body);
-    if (error) return bad(res, error.message);
-
-    const progress = await InstallationProjectProgress.findByPk(req.params.progressId);
-    if (!progress) return notFound(res, 'Progresso não encontrado');
-
-    const project = await InstallationProject.findByPk(progress.projectId);
-    if (!project) return notFound(res, 'Projeto não encontrado');
-
-    const t = await sequelize.transaction();
-
-    try {
-      const trucksDoneToday = value.vehicles.length;
-
-      await progress.update(
-        {
-          date: value.date,
-          notes: value.notes,
-          trucksDoneToday,
-        },
-        { transaction: t }
-      );
-
-      await InstallationProjectProgressVehicle.destroy({
-        where: { progressId: progress.id },
-        transaction: t,
-      });
-
-      await InstallationProjectProgressVehicle.bulkCreate(
-        value.vehicles.map((v) => ({
-          progressId: progress.id,
-          plate: String(v.plate).trim().toUpperCase(),
-          serial: String(v.serial).trim(),
-        })),
-        { transaction: t }
-      );
-
-      const all = await InstallationProjectProgress.findAll({
-        where: { projectId: project.id },
-        transaction: t,
-      });
-
-      const trucksDone = all.reduce((sum, item) => sum + (item.trucksDoneToday || 0), 0);
-
-      await project.update(
-        {
-          trucksDone,
-          updatedById: req.user.id,
-        },
-        { transaction: t }
-      );
-
-      await t.commit();
-
-      const full = await InstallationProjectProgress.findByPk(progress.id, {
-        include: [{ model: InstallationProjectProgressVehicle, as: 'vehicles' }],
-      });
-
-      return ok(res, full);
-    } catch (err) {
-      await t.rollback();
-      return bad(res, err.message || 'Erro ao atualizar progresso');
-    }
-  },
-
-  async removeProgress(req, res) {
-    const progress = await InstallationProjectProgress.findByPk(req.params.progressId);
-    if (!progress) return notFound(res, 'Progresso não encontrado');
-
-    const project = await InstallationProject.findByPk(progress.projectId);
-    if (!project) return notFound(res, 'Projeto não encontrado');
-
-    const t = await sequelize.transaction();
-
-    try {
-      await InstallationProjectProgressVehicle.destroy({
-        where: { progressId: progress.id },
-        transaction: t,
-      });
-
-      await progress.destroy({ transaction: t });
-
-      const all = await InstallationProjectProgress.findAll({
-        where: { projectId: project.id },
-        transaction: t,
-      });
-
-      const trucksDone = all.reduce((sum, item) => sum + (item.trucksDoneToday || 0), 0);
-
-      await project.update(
-        {
-          trucksDone,
-          updatedById: req.user.id,
-        },
-        { transaction: t }
-      );
-
-      await t.commit();
-
-      return ok(res, { message: 'Progresso excluído com sucesso.' });
-    } catch (err) {
-      await t.rollback();
-      return bad(res, err.message || 'Erro ao excluir progresso');
-    }
-  },
   async update(req, res) {
     const project = await InstallationProject.findByPk(req.params.id);
     if (!project) return notFound(res, 'Projeto não encontrado');
@@ -704,6 +560,8 @@ module.exports = {
         'endPlannedAt',
         'trucksTotal',
         'equipmentsPerDay',
+        'dailyGoal',
+        'weeklyGoal',
         'supervisorId',
         'technicianIds',
       ],
@@ -714,12 +572,13 @@ module.exports = {
     if (error) return bad(res, error.message);
 
     const { coordinatorId: _ignoreCoordinatorId, ...rest } = value;
-
     const next = {
       ...rest,
-      af: rest.af === '' ? null : (rest.af ?? project.af),
       updatedById: req.user.id,
     };
+    if (Object.prototype.hasOwnProperty.call(rest, 'requestedState')) {
+      next.requestedState = rest.requestedState ? String(rest.requestedState).trim().toUpperCase() : null;
+    }
 
     if (rest.contactEmails !== undefined || rest.contactEmail !== undefined) {
       const normalizedEmails = normalizeEmailList(rest.contactEmails || rest.contactEmail);
@@ -1008,28 +867,79 @@ module.exports = {
     return created(res, item);
   },
 
-  async addProgress(req, res) {
+  async updateItem(req, res) {
     const schema = Joi.object({
-      date: Joi.string()
-        .pattern(/^\d{4}-\d{2}-\d{2}$/)
-        .required()
-        .messages({
-          'string.pattern.base': 'date inválida. Use YYYY-MM-DD',
-          'any.required': 'Informe a date (YYYY-MM-DD)',
-        }),
-      notes: Joi.string().allow('', null),
-      vehicles: Joi.array()
-        .items(
-          Joi.object({
-            plate: Joi.string().trim().min(5).max(10).required(),
-            serial: Joi.string().trim().min(3).max(60).required(),
-          })
-        )
-        .min(1)
-        .required(),
+      equipmentName: Joi.string().trim().required(),
+      equipmentCode: Joi.string().allow('', null),
+      qty: Joi.number().integer().min(1).required(),
     }).options({ abortEarly: false, stripUnknown: true });
 
     const { error, value } = schema.validate(req.body);
+    if (error) return bad(res, error.message);
+
+    const project = await InstallationProject.findByPk(req.params.id);
+    if (!project) return notFound(res, 'Projeto não encontrado');
+
+    const item = await InstallationProjectItem.findOne({
+      where: {
+        id: req.params.itemId,
+        projectId: project.id,
+      },
+    });
+
+    if (!item) return notFound(res, 'Item não encontrado');
+
+    await item.update({
+      equipmentName: value.equipmentName,
+      equipmentCode: value.equipmentCode || null,
+      qty: value.qty,
+    });
+
+    const items = await InstallationProjectItem.findAll({
+      where: { projectId: project.id },
+    });
+
+    const equipmentsTotal = items.reduce((sum, it) => sum + (it.qty || 0), 0);
+
+    await project.update({
+      equipmentsTotal,
+      updatedById: req.user.id,
+    });
+
+    return ok(res, item);
+  },
+
+  async removeItem(req, res) {
+    const project = await InstallationProject.findByPk(req.params.id);
+    if (!project) return notFound(res, 'Projeto não encontrado');
+
+    const item = await InstallationProjectItem.findOne({
+      where: {
+        id: req.params.itemId,
+        projectId: project.id,
+      },
+    });
+
+    if (!item) return notFound(res, 'Item não encontrado');
+
+    await item.destroy();
+
+    const items = await InstallationProjectItem.findAll({
+      where: { projectId: project.id },
+    });
+
+    const equipmentsTotal = items.reduce((sum, it) => sum + (it.qty || 0), 0);
+
+    await project.update({
+      equipmentsTotal,
+      updatedById: req.user.id,
+    });
+
+    return ok(res, { message: 'Item excluído com sucesso.' });
+  },
+
+  async addProgress(req, res) {
+    const { error, value } = progressSchema.validate(req.body);
     if (error) return bad(res, error.message);
 
     const project = await InstallationProject.findByPk(req.params.id);
@@ -1039,13 +949,19 @@ module.exports = {
 
     try {
       const trucksDoneToday = value.vehicles.length;
+      const completedInstallations = value.completedInstallations ?? trucksDoneToday;
 
       const progress = await InstallationProjectProgress.create(
         {
           projectId: project.id,
           date: value.date,
           trucksDoneToday,
-          notes: value.notes,
+          completedInstallations,
+          failedInstallations: value.failedInstallations ?? 0,
+          plannedInstallations: value.plannedInstallations ?? null,
+          lat: value.lat ?? null,
+          lng: value.lng ?? null,
+          notes: value.notes ?? null,
           createdById: req.user.id,
         },
         { transaction: t }
@@ -1054,22 +970,16 @@ module.exports = {
       await InstallationProjectProgressVehicle.bulkCreate(
         value.vehicles.map((v) => ({
           progressId: progress.id,
-          plate: String(v.plate).toUpperCase(),
-          serial: String(v.serial),
+          plate: String(v.plate).trim().toUpperCase(),
+          serial: String(v.serial).trim(),
         })),
         { transaction: t }
       );
 
-      const all = await InstallationProjectProgress.findAll({
-        where: { projectId: project.id },
-        transaction: t,
-      });
-
-      const trucksDone = all.reduce((sum, p) => sum + (p.trucksDoneToday || 0), 0);
+      await recalcProjectStats(project.id, t);
 
       await project.update(
         {
-          trucksDone,
           updatedById: req.user.id,
         },
         { transaction: t }
@@ -1084,7 +994,255 @@ module.exports = {
       return created(res, full);
     } catch (err) {
       await t.rollback();
+      console.error('addProgress error:', err);
       return bad(res, err.message || 'Erro ao lançar progresso');
+    }
+  },
+
+  async updateProgress(req, res) {
+    const { error, value } = progressSchema.validate(req.body);
+    if (error) return bad(res, error.message);
+
+    const progress = await InstallationProjectProgress.findByPk(req.params.progressId);
+    if (!progress) return notFound(res, 'Progresso não encontrado');
+
+    const project = await InstallationProject.findByPk(progress.projectId);
+    if (!project) return notFound(res, 'Projeto não encontrado');
+
+    const t = await sequelize.transaction();
+
+    try {
+      const trucksDoneToday = value.vehicles.length;
+      const completedInstallations = value.completedInstallations ?? trucksDoneToday;
+
+      await progress.update(
+        {
+          date: value.date,
+          notes: value.notes ?? null,
+          trucksDoneToday,
+          completedInstallations,
+          failedInstallations: value.failedInstallations ?? 0,
+          plannedInstallations: value.plannedInstallations ?? null,
+          lat: value.lat ?? null,
+          lng: value.lng ?? null,
+        },
+        { transaction: t }
+      );
+
+      await InstallationProjectProgressVehicle.destroy({
+        where: { progressId: progress.id },
+        transaction: t,
+      });
+
+      await InstallationProjectProgressVehicle.bulkCreate(
+        value.vehicles.map((v) => ({
+          progressId: progress.id,
+          plate: String(v.plate).trim().toUpperCase(),
+          serial: String(v.serial).trim(),
+        })),
+        { transaction: t }
+      );
+
+      await recalcProjectStats(project.id, t);
+
+      await project.update(
+        {
+          updatedById: req.user.id,
+        },
+        { transaction: t }
+      );
+
+      await t.commit();
+
+      const full = await InstallationProjectProgress.findByPk(progress.id, {
+        include: [{ model: InstallationProjectProgressVehicle, as: 'vehicles' }],
+      });
+
+      return ok(res, full);
+    } catch (err) {
+      await t.rollback();
+      console.error('updateProgress error:', err);
+      return bad(res, err.message || 'Erro ao atualizar progresso');
+    }
+  },
+
+  async removeProgress(req, res) {
+    const progress = await InstallationProjectProgress.findByPk(req.params.progressId);
+    if (!progress) return notFound(res, 'Progresso não encontrado');
+
+    const project = await InstallationProject.findByPk(progress.projectId);
+    if (!project) return notFound(res, 'Projeto não encontrado');
+
+    const t = await sequelize.transaction();
+
+    try {
+      await InstallationProjectProgressVehicle.destroy({
+        where: { progressId: progress.id },
+        transaction: t,
+      });
+
+      await progress.destroy({ transaction: t });
+
+      await recalcProjectStats(project.id, t);
+
+      await project.update(
+        {
+          updatedById: req.user.id,
+        },
+        { transaction: t }
+      );
+
+      await t.commit();
+
+      return ok(res, { message: 'Progresso excluído com sucesso.' });
+    } catch (err) {
+      await t.rollback();
+      console.error('removeProgress error:', err);
+      return bad(res, err.message || 'Erro ao excluir progresso');
+    }
+  },
+
+  async getMetrics(req, res) {
+    try {
+      const project = await InstallationProject.findByPk(req.params.id);
+      if (!project) return notFound(res, 'Projeto não encontrado');
+
+      const today = dayjs().format('YYYY-MM-DD');
+      const startWeek = dayjs().startOf('week').format('YYYY-MM-DD');
+      const endWeek = dayjs().endOf('week').format('YYYY-MM-DD');
+
+      const [todayProgress, weekProgress, totals, heatmap] = await Promise.all([
+        InstallationProjectProgress.findAll({
+          where: { projectId: project.id, date: today },
+          order: [['date', 'ASC'], ['id', 'ASC']],
+        }),
+
+        InstallationProjectProgress.findAll({
+          where: {
+            projectId: project.id,
+            date: { [Op.between]: [startWeek, endWeek] },
+          },
+          order: [['date', 'ASC'], ['id', 'ASC']],
+        }),
+
+        InstallationProjectProgress.findOne({
+          where: { projectId: project.id },
+          attributes: [
+            [fn('COALESCE', fn('SUM', col('completedInstallations')), 0), 'completed'],
+            [fn('COALESCE', fn('SUM', col('failedInstallations')), 0), 'failed'],
+            [fn('COALESCE', fn('SUM', col('plannedInstallations')), 0), 'planned'],
+          ],
+          raw: true,
+        }),
+
+        InstallationProjectProgress.findAll({
+          where: {
+            projectId: project.id,
+            lat: { [Op.ne]: null },
+            lng: { [Op.ne]: null },
+          },
+          attributes: [
+            'id',
+            'date',
+            'lat',
+            'lng',
+            'completedInstallations',
+            'failedInstallations',
+            'plannedInstallations',
+          ],
+          order: [['date', 'DESC'], ['id', 'DESC']],
+        }),
+      ]);
+
+      const dailyCompleted = todayProgress.reduce(
+        (acc, item) => acc + Number(item.completedInstallations ?? item.trucksDoneToday ?? 0),
+        0
+      );
+
+      const dailyFailed = todayProgress.reduce(
+        (acc, item) => acc + Number(item.failedInstallations ?? 0),
+        0
+      );
+
+      const dailyPlanned = todayProgress.reduce(
+        (acc, item) => acc + Number(item.plannedInstallations ?? 0),
+        0
+      );
+
+      const weeklyCompleted = weekProgress.reduce(
+        (acc, item) => acc + Number(item.completedInstallations ?? item.trucksDoneToday ?? 0),
+        0
+      );
+
+      const weeklyFailed = weekProgress.reduce(
+        (acc, item) => acc + Number(item.failedInstallations ?? 0),
+        0
+      );
+
+      const totalCompleted = Number(totals?.completed || 0);
+      const totalFailed = Number(totals?.failed || 0);
+      const totalPlanned = Number(totals?.planned || 0);
+
+      const totalAttempts = totalCompleted + totalFailed;
+      const successRate =
+        totalAttempts > 0
+          ? Number(((totalCompleted / totalAttempts) * 100).toFixed(2))
+          : 0;
+
+      const dailyGoal = Number(project.dailyGoal || 0);
+      const weeklyGoal = Number(project.weeklyGoal || 0);
+
+      const delayed =
+        project.status !== 'FINALIZADO' &&
+        !!project.endPlannedAt &&
+        dayjs(project.endPlannedAt).isBefore(dayjs(), 'day');
+
+      return ok(res, {
+        project: {
+          id: project.id,
+          title: project.title,
+          status: project.status,
+          dailyGoal,
+          weeklyGoal,
+          trucksTotal: project.trucksTotal,
+          trucksDone: project.trucksDone,
+          startPlannedAt: project.startPlannedAt,
+          endPlannedAt: project.endPlannedAt,
+          delayed,
+        },
+        daily: {
+          completed: dailyCompleted,
+          failed: dailyFailed,
+          planned: dailyPlanned,
+          goal: dailyGoal,
+          achieved: dailyGoal > 0 ? dailyCompleted >= dailyGoal : false,
+        },
+        weekly: {
+          completed: weeklyCompleted,
+          failed: weeklyFailed,
+          goal: weeklyGoal,
+          achieved: weeklyGoal > 0 ? weeklyCompleted >= weeklyGoal : false,
+        },
+        totals: {
+          completed: totalCompleted,
+          failed: totalFailed,
+          planned: totalPlanned,
+          successRate,
+        },
+        heatmap,
+        rules: {
+          dailyGoal:
+            'Meta diária atingida quando completedInstallations do dia for maior ou igual ao dailyGoal do projeto',
+          weeklyGoal:
+            'Meta semanal atingida quando a soma de completedInstallations da semana for maior ou igual ao weeklyGoal do projeto',
+          successRate:
+            'Taxa de sucesso = completedInstallations / (completedInstallations + failedInstallations) * 100',
+          dataSource: 'installation_project_progress',
+        },
+      });
+    } catch (err) {
+      console.error('getMetrics error:', err);
+      return bad(res, err.message || 'Erro ao calcular métricas do projeto');
     }
   },
 

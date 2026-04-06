@@ -13,7 +13,10 @@ router.get('/success-rate', ctrl.successRate);
 router.get('/by-coordinator', ctrl.byCoordinator);
 router.get('/by-technician', ctrl.byTechnician);
 router.get('/by-region', ctrl.byRegion);
+router.get('/ending-soon', ctrl.endingSoon);
 router.get('/by-product', ctrl.byProduct);
 router.get('/map', ctrl.map);
+router.get('/delayed-projects', ctrl.delayedProjects);
+
 
 module.exports = router;

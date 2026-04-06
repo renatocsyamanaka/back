@@ -438,7 +438,7 @@ router.put('/:id/items/:itemId', auth(), requireLevel(2), ctrl.updateItem);
 router.post('/', auth(), requireLevel(2), ctrl.create);
 router.patch('/:id', auth(), requireLevel(2), ctrl.update);
 router.delete('/:id/items/:itemId', auth(), requireLevel(2), ctrl.removeItem);
-
+router.get('/:id/metrics', auth(), requireLevel(2), ctrl.getMetrics);
 router.patch('/:id/whatsapp', auth(), requireLevel(2), ctrl.setWhatsApp);
 
 router.post('/:id/start', auth(), requireLevel(2), ctrl.start);

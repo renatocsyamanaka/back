@@ -131,7 +131,7 @@ function normalizeUF(value) {
     SPA: 'SP',
     RI: 'RS',
     RIO: 'RJ',
-    PA: 'PR', // usado como correção prática para casos como COLOMBO
+    PA: 'PR',
   };
 
   if (aliases[uf]) return aliases[uf];
@@ -251,7 +251,15 @@ function isDelayed(project, refDate = dayjs()) {
   const plannedEnd = project.endPlannedAt ? dayjs(project.endPlannedAt) : null;
   if (!plannedEnd) return false;
   if (String(project.status) === 'FINALIZADO') return false;
-  return plannedEnd.isBefore(refDate, 'day');
+  if (getProjectPending(project) <= 0) return false;
+  return plannedEnd.isBefore(refDate.startOf('day'), 'day');
+}
+
+function getDaysLate(project, refDate = dayjs()) {
+  const plannedEnd = project.endPlannedAt ? dayjs(project.endPlannedAt) : null;
+  if (!plannedEnd) return 0;
+  if (!isDelayed(project, refDate)) return 0;
+  return refDate.startOf('day').diff(plannedEnd.startOf('day'), 'day');
 }
 
 // ======================================================
@@ -278,21 +286,21 @@ const CITY_UF_COORDS = {
 };
 
 function resolveProjectCoords(project) {
-  const rawLat = toDecimal(project.client?.latitude, null);
-  const rawLng = toDecimal(project.client?.longitude, null);
+  const requestedLat = toDecimal(project.requestedLat, null);
+  const requestedLng = toDecimal(project.requestedLng, null);
 
-  if (hasValidCoords(rawLat, rawLng)) {
+  if (hasValidCoords(requestedLat, requestedLng)) {
     return {
-      lat: rawLat,
-      lng: rawLng,
-      city: normalizeCity(project.client?.cidade) || null,
-      uf: normalizeUF(project.client?.estado) || null,
-      source: 'client',
+      lat: requestedLat,
+      lng: requestedLng,
+      city: normalizeCity(project.requestedCity) || null,
+      uf: normalizeUF(project.requestedState) || null,
+      source: 'project',
     };
   }
 
-  const city = normalizeCity(project.client?.cidade);
-  const uf = normalizeUF(project.client?.estado);
+  const city = normalizeCity(project.requestedCity);
+  const uf = normalizeUF(project.requestedState);
   const key = `${city}__${uf}`;
 
   if (CITY_UF_COORDS[key]) {
@@ -301,7 +309,7 @@ function resolveProjectCoords(project) {
       lng: CITY_UF_COORDS[key].lng,
       city,
       uf,
-      source: 'city_fallback',
+      source: 'project_city_fallback',
     };
   }
 
@@ -313,6 +321,7 @@ async function loadDashboardProjects(filters = {}) {
 
   if (filters.clientId) where.clientId = Number(filters.clientId);
   if (filters.coordinatorId) where.coordinatorId = Number(filters.coordinatorId);
+  if (filters.supervisorId) where.supervisorId = Number(filters.supervisorId);
 
   if (filters.status) {
     const statuses = String(filters.status)
@@ -341,6 +350,12 @@ async function loadDashboardProjects(filters = {}) {
           'latitude',
           'longitude',
         ],
+      },
+      {
+        model: User,
+        as: 'supervisor',
+        required: false,
+        attributes: ['id', 'name'],
       },
       {
         model: User,
@@ -426,19 +441,20 @@ async function loadDashboardProjects(filters = {}) {
   if (filters.region) {
     const wanted = String(filters.region).trim().toLowerCase();
     rows = rows.filter((p) => {
-      const region = getMacroRegion(p.client?.estado);
+      const uf = normalizeUF(p.requestedState || p.client?.estado);
+      const region = getMacroRegion(uf);
       return region.toLowerCase() === wanted;
     });
   }
 
   if (filters.uf) {
     const wanted = normalizeUF(filters.uf);
-    rows = rows.filter((p) => normalizeUF(p.client?.estado) === wanted);
+    rows = rows.filter((p) => normalizeUF(p.requestedState || p.client?.estado) === wanted);
   }
 
   if (filters.city) {
     const wanted = normalizeCity(filters.city).toLowerCase();
-    rows = rows.filter((p) => normalizeCity(p.client?.cidade).toLowerCase() === wanted);
+    rows = rows.filter((p) => normalizeCity(p.requestedCity || p.client?.cidade).toLowerCase() === wanted);
   }
 
   if (filters.product) {
@@ -460,6 +476,7 @@ async function loadDashboardProjects(filters = {}) {
         p.client?.name,
         p.client?.nomeFantasia,
         p.coordinator?.name,
+        p.supervisor?.name,
         ...(p.technicianNames || []),
       ]
         .filter(Boolean)
@@ -492,6 +509,15 @@ async function loadDashboardProjects(filters = {}) {
 
       return projectMatches || hasProgressInRange;
     });
+  }
+
+  if (
+    String(filters.delayed) === 'true' ||
+    String(filters.delayed) === '1' ||
+    filters.delayed === true ||
+    filters.delayed === 1
+  ) {
+    rows = rows.filter((p) => isDelayed(p));
   }
 
   return rows;
@@ -593,6 +619,139 @@ function buildProductivity(projects) {
   };
 }
 
+function buildBySupervisor(projects) {
+  const map = new Map();
+
+  for (const project of projects) {
+    const id = project.supervisor?.id || project.supervisorId || 0;
+    const name = project.supervisor?.name || 'Sem supervisor';
+
+    if (!map.has(id)) {
+      map.set(id, {
+        supervisorId: id,
+        supervisorName: name,
+        totalProjects: 0,
+        completedProjects: 0,
+        planned: 0,
+        done: 0,
+        pending: 0,
+        delayedProjects: 0,
+        percentDone: 0,
+      });
+    }
+
+    const row = map.get(id);
+    row.totalProjects += 1;
+    if (project.status === 'FINALIZADO') {
+      row.completedProjects += 1;
+    }
+
+    row.planned += getProjectPlanned(project);
+    row.done += getProjectDone(project);
+    row.pending += getProjectPending(project);
+
+    if (isDelayed(project)) {
+      row.delayedProjects += 1;
+    }
+  }
+
+  return [...map.values()]
+    .map((row) => ({
+      ...row,
+      percentDone: row.planned
+        ? Number(((row.done / row.planned) * 100).toFixed(2))
+        : 0,
+    }))
+    .sort((a, b) => b.totalProjects - a.totalProjects || b.done - a.done);
+}
+
+function buildEndingSoon(projects, days = 7) {
+  const today = dayjs().startOf('day');
+  const limit = today.add(Number(days) || 7, 'day');
+
+  return projects
+    .filter((project) => {
+      if (project.status === 'FINALIZADO') return false;
+      if (!project.endPlannedAt) return false;
+      if (getProjectPending(project) <= 0) return false;
+
+      const end = dayjs(project.endPlannedAt);
+      return (
+        end.isSame(today, 'day') ||
+        (end.isAfter(today, 'day') && (end.isBefore(limit, 'day') || end.isSame(limit, 'day')))
+      );
+    })
+    .map((project) => {
+      const end = dayjs(project.endPlannedAt);
+      return {
+        id: project.id,
+        title: project.title,
+        af: project.af || null,
+        status: project.status,
+        clientId: project.client?.id || project.clientId || null,
+        clientName: project.client?.name || project.client?.nomeFantasia || null,
+        supervisorId: project.supervisor?.id || project.supervisorId || null,
+        supervisorName: project.supervisor?.name || null,
+        coordinatorId: project.coordinator?.id || project.coordinatorId || null,
+        coordinatorName: project.coordinator?.name || null,
+        startPlannedAt: project.startPlannedAt || null,
+        endPlannedAt: project.endPlannedAt || null,
+        planned: getProjectPlanned(project),
+        done: getProjectDone(project),
+        pending: getProjectPending(project),
+        daysLeft: end.diff(today, 'day'),
+      };
+    })
+    .sort((a, b) => a.daysLeft - b.daysLeft || String(a.endPlannedAt || '').localeCompare(String(b.endPlannedAt || '')));
+}
+
+function buildDelayedProjects(projects) {
+  const today = dayjs();
+
+  return projects
+    .filter((project) => isDelayed(project, today))
+    .map((project) => {
+      const equipments = safeArray(project.items).map((item) => ({
+        id: item.id,
+        name: item.equipmentName || null,
+        code: item.equipmentCode || null,
+        qty: toNumber(item.qty, 0),
+      }));
+
+      const equipmentsLabel = equipments.length
+        ? equipments
+            .map((item) => {
+              const code = item.code ? ` (${item.code})` : '';
+              return `${item.name || 'Sem nome'}${code} x${item.qty}`;
+            })
+            .join(', ')
+        : '-';
+
+      return {
+        id: project.id,
+        title: project.title,
+        af: project.af || null,
+        status: project.status,
+        clientId: project.client?.id || project.clientId || null,
+        clientName: project.client?.name || project.client?.nomeFantasia || null,
+        supervisorId: project.supervisor?.id || project.supervisorId || null,
+        supervisorName: project.supervisor?.name || null,
+        coordinatorId: project.coordinator?.id || project.coordinatorId || null,
+        coordinatorName: project.coordinator?.name || null,
+        startPlannedAt: project.startPlannedAt || null,
+        endPlannedAt: project.endPlannedAt || null,
+        planned: getProjectPlanned(project),
+        done: getProjectDone(project),
+        pending: getProjectPending(project),
+        daysLate: getDaysLate(project, today),
+        equipments,
+        equipmentsLabel,
+        projectUrl: `/projetos-instalacao/${project.id}`,
+      };
+    })
+    .sort((a, b) => b.daysLate - a.daysLate || b.pending - a.pending);
+}
+
 function buildByClient(projects) {
   const map = new Map();
 
@@ -607,16 +766,22 @@ function buildByClient(projects) {
       map.set(clientId, {
         clientId,
         clientName,
+        totalProjects: 0,
+        completedProjects: 0,
         planned: 0,
         done: 0,
         pending: 0,
-        projects: 0,
         percentDone: 0,
       });
     }
 
     const row = map.get(clientId);
-    row.projects += 1;
+
+    row.totalProjects += 1;
+    if (project.status === 'FINALIZADO') {
+      row.completedProjects += 1;
+    }
+
     row.planned += getProjectPlanned(project);
     row.done += getProjectDone(project);
     row.pending += getProjectPending(project);
@@ -625,9 +790,11 @@ function buildByClient(projects) {
   return [...map.values()]
     .map((row) => ({
       ...row,
-      percentDone: row.planned ? Number(((row.done / row.planned) * 100).toFixed(2)) : 0,
+      percentDone: row.planned
+        ? Number(((row.done / row.planned) * 100).toFixed(2))
+        : 0,
     }))
-    .sort((a, b) => b.done - a.done || b.planned - a.planned);
+    .sort((a, b) => b.totalProjects - a.totalProjects || b.completedProjects - a.completedProjects);
 }
 
 function buildByStatus(projects) {
@@ -800,8 +967,8 @@ function buildByRegion(projects) {
   const map = new Map();
 
   for (const project of projects) {
-    const uf = normalizeUF(project.client?.estado) || 'N/I';
-    const city = normalizeCity(project.client?.cidade) || 'Não informada';
+    const uf = normalizeUF(project.requestedState || project.client?.estado) || 'N/I';
+    const city = normalizeCity(project.requestedCity || project.client?.cidade) || 'Não informada';
     const macroRegion = getMacroRegion(uf);
 
     const key = `${macroRegion}__${uf}__${city}`;
@@ -935,6 +1102,36 @@ function buildMapData(projects) {
 // Controllers
 // ======================================================
 
+async function delayedProjects(req, res) {
+  try {
+    const projects = await loadDashboardProjects(req.query);
+
+    return ok(res, {
+      filters: req.query,
+      data: buildDelayedProjects(projects),
+    });
+  } catch (err) {
+    console.error('installationProjectDashboard.delayedProjects:', err);
+    return bad(res, err.message || 'Erro ao montar projetos atrasados');
+  }
+}
+
+async function endingSoon(req, res) {
+  try {
+    const projects = await loadDashboardProjects(req.query);
+    const days = Number(req.query.days || req.query.endingDays || 7);
+
+    return ok(res, {
+      filters: req.query,
+      days,
+      data: buildEndingSoon(projects, days),
+    });
+  } catch (err) {
+    console.error('installationProjectDashboard.endingSoon:', err);
+    return bad(res, err.message || 'Erro ao montar projetos para acabar');
+  }
+}
+
 async function overview(req, res) {
   try {
     const projects = await loadDashboardProjects(req.query);
@@ -946,10 +1143,12 @@ async function overview(req, res) {
       byClient: buildByClient(projects),
       byStatus: buildByStatus(projects),
       byCoordinator: buildByCoordinator(projects),
-      byTechnician: buildByTechnician(projects),
+      bySupervisor: buildBySupervisor(projects),
       byRegion: buildByRegion(projects),
       byProduct: buildByProduct(projects),
       successRate: buildSuccessRate(projects),
+      endingSoon: buildEndingSoon(projects, req.query.endingDays || 7),
+      delayedProjects: buildDelayedProjects(projects),
       map: buildMapData(projects),
     };
 
@@ -1044,6 +1243,20 @@ async function byCoordinator(req, res) {
   }
 }
 
+async function bySupervisor(req, res) {
+  try {
+    const projects = await loadDashboardProjects(req.query);
+
+    return ok(res, {
+      filters: req.query,
+      data: buildBySupervisor(projects),
+    });
+  } catch (err) {
+    console.error('installationProjectDashboard.bySupervisor:', err);
+    return bad(res, err.message || 'Erro ao montar visão por supervisor');
+  }
+}
+
 async function byTechnician(req, res) {
   try {
     const projects = await loadDashboardProjects(req.query);
@@ -1108,8 +1321,11 @@ module.exports = {
   byStatus,
   successRate,
   byCoordinator,
+  bySupervisor,
   byTechnician,
   byRegion,
   byProduct,
   map,
+  endingSoon,
+  delayedProjects,
 };
