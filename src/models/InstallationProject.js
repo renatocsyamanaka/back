@@ -134,7 +134,19 @@ InstallationProject.init(
       type: DataTypes.INTEGER,
       allowNull: true,
     },
-
+    saleDate: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+    },
+    recordType: {
+      type: DataTypes.ENUM('BASE', 'PROJECT'),
+      allowNull: false,
+      defaultValue: 'PROJECT',
+    },
+    importBatch: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
     technicianIds: {
       type: DataTypes.JSON,
       allowNull: true,

@@ -1,6 +1,7 @@
 const Joi = require('joi');
 const { Op, fn, col } = require('sequelize');
 const dayjs = require('dayjs');
+const XLSX = require('xlsx');
 const sequelize = require('../db');
 
 const {
@@ -98,6 +99,58 @@ function normalizeDateOnly(value) {
   }
 
   return str;
+}
+
+function normalizeUpperText(value) {
+  if (value == null) return '';
+  return String(value).trim().toUpperCase();
+}
+
+function parseExcelDate(value) {
+  if (value == null || value === '') return null;
+
+  if (typeof value === 'number') {
+    const d = XLSX.SSF.parse_date_code(value);
+    if (!d) return null;
+    return dayjs(new Date(d.y, d.m - 1, d.d)).format('YYYY-MM-DD');
+  }
+
+  const str = String(value).trim();
+
+  const formats = [
+    'YYYY-MM-DD',
+    'DD/MM/YYYY',
+    'D/M/YYYY',
+    'MM/DD/YYYY',
+    'M/D/YYYY',
+  ];
+
+  for (const fmt of formats) {
+    const parsed = dayjs(str, fmt, true);
+    if (parsed.isValid()) return parsed.format('YYYY-MM-DD');
+  }
+
+  const parsed = dayjs(str);
+  if (parsed.isValid()) return parsed.format('YYYY-MM-DD');
+
+  return null;
+}
+
+function toInt(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.trunc(n) : fallback;
+}
+
+function buildImportBatch() {
+  return `BASE-${dayjs().format('YYYYMMDD-HHmmss')}`;
+}
+
+function normalizeExcelRowKeys(row = {}) {
+  const out = {};
+  for (const [key, value] of Object.entries(row)) {
+    out[normalizeUpperText(key)] = value;
+  }
+  return out;
 }
 
 async function findCoordinatorIdFromSupervisor(supervisorId) {
@@ -344,11 +397,12 @@ const createSchema = Joi.object({
 
   contactName: Joi.string().allow('', null),
   contactEmail: Joi.string().email().allow('', null),
-  contactEmails: Joi.array().items(Joi.string().email()).min(1).required(),
+  contactEmails: Joi.array().items(Joi.string().email()).min(1).allow(null),
   contactPhone: Joi.string().allow('', null),
 
   startPlannedAt: dateOnlyField,
   endPlannedAt: dateOnlyField,
+  saleDate: dateOnlyField,
 
   trucksTotal: Joi.number().integer().min(1).required(),
   equipmentsPerDay: Joi.number().integer().min(1).required(),
@@ -356,12 +410,15 @@ const createSchema = Joi.object({
   dailyGoal: Joi.number().integer().min(0).allow(null),
   weeklyGoal: Joi.number().integer().min(0).allow(null),
 
-  supervisorId: Joi.number().integer().required(),
+  supervisorId: Joi.number().integer().allow(null),
   technicianId: Joi.number().integer().allow(null),
   technicianIds: Joi.array().items(Joi.number().integer()).optional(),
 
   notes: Joi.string().allow('', null),
   coordinatorId: Joi.number().integer().allow(null),
+
+  recordType: Joi.string().valid('BASE', 'PROJECT').default('PROJECT'),
+  importBatch: Joi.string().allow('', null),
 
   requestedLocationText: Joi.string().allow('', null),
   requestedCity: Joi.string().allow('', null),
@@ -376,6 +433,9 @@ const listSchema = Joi.object({
   q: Joi.string().allow('', null),
   mine: Joi.boolean().default(false),
   delayed: Joi.boolean().allow(null),
+  recordType: Joi.string().valid('BASE', 'PROJECT').allow(null),
+  saleDateFrom: dateOnlyField,
+  saleDateTo: dateOnlyField,
 }).options({ abortEarly: false, stripUnknown: true });
 
 const emailSendSchema = Joi.object({
@@ -424,12 +484,20 @@ module.exports = {
     if (error) return bad(res, error.message);
 
     const where = {};
+
     if (value.status) where.status = value.status;
     if (value.mine) where.createdById = req.user.id;
+    if (value.recordType) where.recordType = value.recordType;
 
     if (value.delayed === true) {
       where.status = { [Op.ne]: 'FINALIZADO' };
       where.endPlannedAt = { [Op.lt]: dayjs().format('YYYY-MM-DD') };
+    }
+
+    if (value.saleDateFrom || value.saleDateTo) {
+      where.saleDate = {};
+      if (value.saleDateFrom) where.saleDate[Op.gte] = normalizeDateOnly(value.saleDateFrom);
+      if (value.saleDateTo) where.saleDate[Op.lte] = normalizeDateOnly(value.saleDateTo);
     }
 
     if (value.q) {
@@ -438,18 +506,23 @@ module.exports = {
         { contactName: { [Op.like]: `%${value.q}%` } },
         { contactEmail: { [Op.like]: `%${value.q}%` } },
         { af: { [Op.like]: `%${value.q}%` } },
+        { '$client.name$': { [Op.like]: `%${value.q}%` } },
       ];
     }
 
     const rows = await InstallationProject.findAll({
       where,
-      order: [['id', 'DESC']],
+      order: [
+        ['saleDate', 'DESC'],
+        ['id', 'DESC'],
+      ],
       include: [
-        { model: Client, as: 'client', attributes: ['id', 'name'] },
+        { model: Client, as: 'client', attributes: ['id', 'name'], required: false },
         { model: User, as: 'creator', attributes: ['id', 'name'] },
         { model: User, as: 'supervisor', attributes: ['id', 'name'] },
         { model: User, as: 'coordinator', attributes: ['id', 'name'] },
         { model: User, as: 'technician', attributes: ['id', 'name'] },
+        { model: InstallationProjectItem, as: 'items', required: false },
       ],
     });
 
@@ -469,6 +542,7 @@ module.exports = {
 
     const startPlannedAt = normalizeDateOnly(value.startPlannedAt);
     const endPlannedAtInput = normalizeDateOnly(value.endPlannedAt);
+    const saleDate = normalizeDateOnly(value.saleDate);
 
     if (!isValidDateOnly(value.startPlannedAt)) {
       return bad(res, 'Data prevista de início inválida. Use YYYY-MM-DD');
@@ -478,10 +552,20 @@ module.exports = {
       return bad(res, 'Data prevista de término inválida. Use YYYY-MM-DD');
     }
 
+    if (!isValidDateOnly(value.saleDate)) {
+      return bad(res, 'Data da venda inválida. Use YYYY-MM-DD');
+    }
+
     const normalizedEmails = normalizeEmailList(value.contactEmails || value.contactEmail);
-    if (!normalizedEmails.length) {
+    const isBase = (value.recordType || 'PROJECT') === 'BASE';
+
+    if (!normalizedEmails.length && !isBase) {
       return bad(res, 'Informe pelo menos um e-mail de contato');
     }
+
+    const finalEmails = normalizedEmails.length
+      ? normalizedEmails
+      : ['sem-email@base.local'];
 
     const normalizedTechnicianIds = normalizeIdList(
       value.technicianIds || (value.technicianId ? [value.technicianId] : [])
@@ -490,9 +574,13 @@ module.exports = {
     const { error: techErr } = await validateTechnicianIds(normalizedTechnicianIds);
     if (techErr) return bad(res, techErr);
 
-    const { coordinatorId, error: coordErr } =
-      await findCoordinatorIdFromSupervisor(value.supervisorId);
-    if (coordErr) return bad(res, coordErr);
+    let coordinatorId = value.coordinatorId ?? null;
+
+    if (value.supervisorId) {
+      const result = await findCoordinatorIdFromSupervisor(value.supervisorId);
+      if (result.error) return bad(res, result.error);
+      coordinatorId = result.coordinatorId ?? null;
+    }
 
     const daysNeeded = calcDaysNeeded(value.trucksTotal, value.equipmentsPerDay);
 
@@ -503,46 +591,50 @@ module.exports = {
           ? addBusinessDaysInclusive(startPlannedAt, daysNeeded)
           : null;
 
-      const project = await InstallationProject.create({
-        title: value.title,
-        clientId: value.clientId ?? null,
-        af: value.af ? String(value.af).trim() : null,
+    const project = await InstallationProject.create({
+      title: value.title,
+      clientId: value.clientId ?? null,
+      af: value.af ? String(value.af).trim() : null,
 
-        contactName: value.contactName ?? null,
-        contactEmail: normalizedEmails[0],
-        contactEmails: normalizedEmails,
-        contactPhone: value.contactPhone ?? null,
+      contactName: value.contactName ?? null,
+      contactEmail: finalEmails[0],
+      contactEmails: finalEmails,
+      contactPhone: value.contactPhone ?? null,
 
-        startPlannedAt,
-        endPlannedAt,
+      startPlannedAt,
+      endPlannedAt,
+      saleDate,
 
-        trucksTotal: value.trucksTotal,
-        equipmentsPerDay: value.equipmentsPerDay,
-        dailyGoal: value.dailyGoal ?? null,
-        weeklyGoal: value.weeklyGoal ?? null,
-        notes: value.notes ?? null,
+      trucksTotal: value.trucksTotal,
+      equipmentsPerDay: value.equipmentsPerDay,
+      dailyGoal: value.dailyGoal ?? null,
+      weeklyGoal: value.weeklyGoal ?? null,
+      notes: value.notes ?? null,
 
-        supervisorId: value.supervisorId,
-        coordinatorId: coordinatorId ?? null,
+      supervisorId: value.supervisorId ?? null,
+      coordinatorId,
 
-        technicianId: normalizedTechnicianIds[0] || null,
-        technicianIds: normalizedTechnicianIds.length ? normalizedTechnicianIds : [],
+      technicianId: normalizedTechnicianIds[0] || null,
+      technicianIds: normalizedTechnicianIds.length ? normalizedTechnicianIds : [],
 
-        requestedLocationText: value.requestedLocationText ?? null,
-        requestedCity: value.requestedCity ?? null,
-        requestedState: value.requestedState ?? null,
-        requestedCep: value.requestedCep ?? null,
-        requestedLat: value.requestedLat ?? null,
-        requestedLng: value.requestedLng ?? null,
+      recordType: value.recordType || 'PROJECT',
+      importBatch: value.importBatch || null,
 
-        createdById: req.user.id,
-        updatedById: req.user.id,
+      requestedLocationText: value.requestedLocationText ?? null,
+      requestedCity: value.requestedCity ?? null,
+      requestedState: value.requestedState ? String(value.requestedState).trim().toUpperCase() : null,
+      requestedCep: value.requestedCep ?? null,
+      requestedLat: value.requestedLat ?? null,
+      requestedLng: value.requestedLng ?? null,
 
-        status: 'A_INICIAR',
-        trucksDone: 0,
-        equipmentsTotal: 0,
-        daysEstimated: daysNeeded,
-      });
+      createdById: req.user.id,
+      updatedById: req.user.id,
+
+      status: 'A_INICIAR',
+      trucksDone: 0,
+      equipmentsTotal: 0,
+      daysEstimated: daysNeeded,
+    });
 
     const full = await loadProjectWithDetails(project.id);
     return created(res, full);
@@ -558,12 +650,15 @@ module.exports = {
         'contactEmails',
         'startPlannedAt',
         'endPlannedAt',
+        'saleDate',
         'trucksTotal',
         'equipmentsPerDay',
         'dailyGoal',
         'weeklyGoal',
         'supervisorId',
         'technicianIds',
+        'recordType',
+        'importBatch',
       ],
       (s) => s.optional()
     );
@@ -576,19 +671,27 @@ module.exports = {
       ...rest,
       updatedById: req.user.id,
     };
+
     if (Object.prototype.hasOwnProperty.call(rest, 'requestedState')) {
-      next.requestedState = rest.requestedState ? String(rest.requestedState).trim().toUpperCase() : null;
+      next.requestedState = rest.requestedState
+        ? String(rest.requestedState).trim().toUpperCase()
+        : null;
     }
 
     if (rest.contactEmails !== undefined || rest.contactEmail !== undefined) {
       const normalizedEmails = normalizeEmailList(rest.contactEmails || rest.contactEmail);
+      const nextRecordType = rest.recordType || project.recordType;
 
-      if (!normalizedEmails.length) {
+      if (!normalizedEmails.length && nextRecordType !== 'BASE') {
         return bad(res, 'Informe pelo menos um e-mail de contato');
       }
 
-      next.contactEmails = normalizedEmails;
-      next.contactEmail = normalizedEmails[0];
+      const finalEmails = normalizedEmails.length
+        ? normalizedEmails
+        : ['sem-email@base.local'];
+
+      next.contactEmails = finalEmails;
+      next.contactEmail = finalEmails[0];
     }
 
     if (rest.technicianIds !== undefined || rest.technicianId !== undefined) {
@@ -603,12 +706,10 @@ module.exports = {
       next.technicianId = normalizedTechnicianIds[0] || null;
     }
 
-    if (rest.supervisorId) {
-      const { coordinatorId, error: coordErr } =
-        await findCoordinatorIdFromSupervisor(rest.supervisorId);
-      if (coordErr) return bad(res, coordErr);
-
-      next.coordinatorId = coordinatorId ?? null;
+    if (Object.prototype.hasOwnProperty.call(rest, 'supervisorId') && rest.supervisorId) {
+      const result = await findCoordinatorIdFromSupervisor(rest.supervisorId);
+      if (result.error) return bad(res, result.error);
+      next.coordinatorId = result.coordinatorId ?? null;
     }
 
     const trucksTotal = rest.trucksTotal ?? project.trucksTotal;
@@ -628,6 +729,21 @@ module.exports = {
         return bad(res, 'Data prevista de término inválida. Use YYYY-MM-DD');
       }
       next.endPlannedAt = normalizeDateOnly(rest.endPlannedAt);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(rest, 'saleDate')) {
+      if (!isValidDateOnly(rest.saleDate)) {
+        return bad(res, 'Data da venda inválida. Use YYYY-MM-DD');
+      }
+      next.saleDate = normalizeDateOnly(rest.saleDate);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(rest, 'recordType')) {
+      next.recordType = rest.recordType;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(rest, 'importBatch')) {
+      next.importBatch = rest.importBatch || null;
     }
 
     await project.update(next);
@@ -661,6 +777,10 @@ module.exports = {
     const project = await InstallationProject.findByPk(req.params.id);
     if (!project) return notFound(res, 'Projeto não encontrado');
 
+    if (project.recordType === 'BASE') {
+      return bad(res, 'Converta a BASE para projeto antes de iniciar');
+    }
+
     if (!project.startPlannedAt) {
       return bad(res, 'Defina a data de início prevista antes de iniciar');
     }
@@ -680,14 +800,6 @@ module.exports = {
 
     if (!project.supervisorId) {
       return bad(res, 'Defina o supervisor do projeto antes de iniciar');
-    }
-
-    const technicianIds = normalizeIdList(
-      project.technicianIds?.length ? project.technicianIds : project.technicianId
-    );
-
-    if (!technicianIds.length) {
-      return bad(res, 'Defina pelo menos um técnico/prestador antes de iniciar');
     }
 
     await project.update({
@@ -1244,6 +1356,287 @@ module.exports = {
       console.error('getMetrics error:', err);
       return bad(res, err.message || 'Erro ao calcular métricas do projeto');
     }
+  },
+async importBaseExcel(req, res) {
+  try {
+    console.log('IMPORT BASE -> req.file:', req.file);
+
+    if (!req.file) return bad(res, 'Envie um arquivo Excel');
+
+    await sequelize.authenticate();
+
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    console.log('IMPORT BASE -> sheets:', workbook.SheetNames);
+
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) return bad(res, 'Planilha não encontrada');
+
+    const sheet = workbook.Sheets[sheetName];
+
+    const sheetData = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      defval: null,
+      raw: false,
+    });
+
+    console.log('IMPORT BASE -> sheetData.length:', sheetData.length);
+    console.log('IMPORT BASE -> primeira linha bruta:', sheetData[0]);
+
+    if (!sheetData.length) {
+      return bad(res, 'Planilha vazia');
+    }
+
+    const headers = (sheetData[0] || []).map((h) =>
+      String(h || '').trim().toUpperCase()
+    );
+
+    const rawRows = sheetData
+      .slice(1)
+      .map((row) => {
+        const obj = {};
+        headers.forEach((h, i) => {
+          obj[h] = row[i];
+        });
+        return obj;
+      })
+      .filter((row) =>
+        Object.values(row).some((v) => v !== null && String(v).trim() !== '')
+      );
+
+    console.log('IMPORT BASE -> rawRows.length:', rawRows.length);
+    console.log('IMPORT BASE -> firstRow:', rawRows[0]);
+
+    if (!rawRows.length) {
+      return bad(res, 'Planilha vazia');
+    }
+
+    const grouped = new Map();
+
+    for (const raw of rawRows) {
+      const row = normalizeExcelRowKeys(raw);
+
+      const af = String(row.AF || '').trim();
+      if (!af) continue;
+
+      const clientName = String(row.CLIENTE || '').trim();
+      const saleDate = parseExcelDate(row.DATA);
+      const product = String(row.PRODUTO || '').trim();
+      const qty = toInt(row.QUANTIDADE_PRODUTO, 0);
+      const totalEquip = toInt(row.TOTAL_EQUIPAMENTOS_AF, 0);
+
+      if (!grouped.has(af)) {
+        grouped.set(af, {
+          af,
+          saleDate,
+          clientName,
+          totalEquip,
+          items: [],
+        });
+      }
+
+      const current = grouped.get(af);
+
+      if (product && qty > 0) {
+        current.items.push({
+          equipmentName: product,
+          equipmentCode: null,
+          qty,
+        });
+      }
+
+      if (!current.saleDate && saleDate) current.saleDate = saleDate;
+      if (!current.clientName && clientName) current.clientName = clientName;
+      if (!current.totalEquip && totalEquip > 0) current.totalEquip = totalEquip;
+    }
+
+    const entries = [...grouped.values()];
+    console.log('IMPORT BASE -> AFs únicas:', entries.length);
+    console.log('IMPORT BASE -> primeira entry:', entries[0]);
+
+    if (!entries.length) {
+      return bad(res, 'Nenhuma AF válida encontrada no Excel');
+    }
+
+    const batch = buildImportBatch();
+    const touchedIds = [];
+    const errors = [];
+    let importedCount = 0;
+    let updatedCount = 0;
+
+    for (const entry of entries) {
+      let t;
+
+      try {
+        t = await sequelize.transaction();
+
+        console.log('IMPORT BASE -> processando AF:', entry.af);
+
+        const existing = await InstallationProject.findOne({
+          where: { af: entry.af },
+          transaction: t,
+        });
+
+        if (existing) {
+          console.log('IMPORT BASE -> AF já existe:', entry.af, 'ID:', existing.id);
+
+          await existing.update(
+            {
+              title: entry.clientName || existing.title || `Implantação ${entry.af}`,
+              saleDate: entry.saleDate || existing.saleDate || null,
+              trucksTotal: entry.totalEquip || existing.trucksTotal || 1,
+              equipmentsTotal: entry.totalEquip || existing.equipmentsTotal || 0,
+              recordType: 'BASE',
+              importBatch: batch,
+              updatedById: req.user.id,
+            },
+            { transaction: t }
+          );
+
+          await InstallationProjectItem.destroy({
+            where: { projectId: existing.id },
+            transaction: t,
+          });
+
+          if (entry.items.length) {
+            await InstallationProjectItem.bulkCreate(
+              entry.items.map((item) => ({
+                projectId: existing.id,
+                equipmentName: item.equipmentName,
+                equipmentCode: item.equipmentCode,
+                qty: item.qty,
+              })),
+              { transaction: t }
+            );
+          }
+
+          await t.commit();
+          touchedIds.push(existing.id);
+          updatedCount++;
+        } else {
+          console.log('IMPORT BASE -> criando nova AF:', entry.af);
+
+          const project = await InstallationProject.create(
+            {
+              status: 'A_INICIAR',
+              title: entry.clientName || `Implantação ${entry.af}`,
+              af: entry.af,
+              clientId: null,
+
+              saleDate: entry.saleDate || null,
+
+              contactName: null,
+              contactEmail: 'sem-email@base.local',
+              contactEmails: ['sem-email@base.local'],
+              contactPhone: null,
+
+              startPlannedAt: null,
+              endPlannedAt: null,
+              startAt: null,
+              endAt: null,
+
+              trucksTotal: entry.totalEquip || 1,
+              trucksDone: 0,
+              equipmentsTotal: entry.totalEquip || 0,
+              equipmentsPerDay: 1,
+              daysEstimated: null,
+
+              dailyGoal: null,
+              weeklyGoal: null,
+
+              whatsappGroupName: null,
+              whatsappGroupLink: null,
+              notes: null,
+
+              supervisorId: null,
+              coordinatorId: null,
+              technicianId: null,
+              technicianIds: [],
+
+              recordType: 'BASE',
+              importBatch: batch,
+
+              createdById: req.user.id,
+              updatedById: req.user.id,
+            },
+            { transaction: t }
+          );
+
+          if (entry.items.length) {
+            await InstallationProjectItem.bulkCreate(
+              entry.items.map((item) => ({
+                projectId: project.id,
+                equipmentName: item.equipmentName,
+                equipmentCode: item.equipmentCode,
+                qty: item.qty,
+              })),
+              { transaction: t }
+            );
+          }
+
+          await t.commit();
+          touchedIds.push(project.id);
+          importedCount++;
+        }
+      } catch (err) {
+        console.error('IMPORT BASE -> erro na AF:', entry.af, err);
+
+        if (t) {
+          try {
+            await t.rollback();
+          } catch (rollbackErr) {
+            console.error(
+              'IMPORT BASE -> rollback falhou para AF:',
+              entry.af,
+              rollbackErr.message
+            );
+          }
+        }
+
+        errors.push({
+          af: entry.af,
+          error: err?.message || 'Erro ao importar AF',
+        });
+      }
+    }
+
+    const rows = touchedIds.length
+      ? await InstallationProject.findAll({
+          where: { id: { [Op.in]: touchedIds } },
+          include: [
+            { model: InstallationProjectItem, as: 'items', required: false },
+            { model: Client, as: 'client', attributes: ['id', 'name'], required: false },
+          ],
+          order: [['id', 'DESC']],
+        })
+      : [];
+
+    return ok(res, {
+      batch,
+      importedCount,
+      updatedCount,
+      totalProcessed: entries.length,
+      successCount: importedCount + updatedCount,
+      errorCount: errors.length,
+      errors,
+      rows,
+    });
+  } catch (err) {
+    console.error('IMPORT BASE -> erro fatal:', err);
+    return bad(res, err.message || 'Falha ao importar Excel');
+  }
+},
+
+  async convertBaseToProject(req, res) {
+    const project = await InstallationProject.findByPk(req.params.id);
+    if (!project) return notFound(res, 'Projeto não encontrado');
+
+    await project.update({
+      recordType: 'PROJECT',
+      updatedById: req.user.id,
+    });
+
+    const full = await loadProjectWithDetails(project.id);
+    return ok(res, full);
   },
 
   // =========================================================

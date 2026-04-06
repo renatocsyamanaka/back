@@ -3,6 +3,7 @@ const router = require('express').Router();
 const auth = require('../middleware/auth');
 const requireLevel = require('../middleware/rbac');
 const ctrl = require('../controllers/installationProjectController');
+const uploadExcel = require('../middleware/uploadExcel');
 
 /**
  * @swagger
@@ -431,9 +432,13 @@ const ctrl = require('../controllers/installationProjectController');
 
 // ✅ Analista+ (2)
 router.get('/', auth(), requireLevel(2), ctrl.list);
+router.post('/import-base', auth(), requireLevel(1), uploadExcel.single('file'), ctrl.importBaseExcel);
+router.patch( '/:id/convert-to-project', auth(),  requireLevel(1), ctrl.convertBaseToProject);
+
 router.get('/:id', auth(), requireLevel(2), ctrl.getById);
 router.put('/:id/progress/:progressId', auth(), requireLevel(2), ctrl.updateProgress);
 router.delete('/:id/progress/:progressId', auth(), requireLevel(2), ctrl.removeProgress);
+
 router.put('/:id/items/:itemId', auth(), requireLevel(2), ctrl.updateItem);
 router.post('/', auth(), requireLevel(2), ctrl.create);
 router.patch('/:id', auth(), requireLevel(2), ctrl.update);

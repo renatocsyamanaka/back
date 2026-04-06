@@ -319,6 +319,21 @@ function resolveProjectCoords(project) {
 async function loadDashboardProjects(filters = {}) {
   const where = {};
 
+  // ======================================================
+  // recordType
+  // Regra:
+  // - por padrão, dashboard mostra SOMENTE PROJECT
+  // - se vier recordType=BASE, mostra só base
+  // - se vier recordType=ALL, não filtra
+  // ======================================================
+  const recordTypeRaw = String(filters.recordType || 'PROJECT')
+    .trim()
+    .toUpperCase();
+
+  if (recordTypeRaw === 'PROJECT' || recordTypeRaw === 'BASE') {
+    where.recordType = recordTypeRaw;
+  }
+
   if (filters.clientId) where.clientId = Number(filters.clientId);
   if (filters.coordinatorId) where.coordinatorId = Number(filters.coordinatorId);
   if (filters.supervisorId) where.supervisorId = Number(filters.supervisorId);
