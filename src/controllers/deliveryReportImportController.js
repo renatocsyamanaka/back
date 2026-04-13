@@ -7,10 +7,12 @@ const {
   sequelize,
 } = require('../models');
 
+const IMPORT_CONTROLLER_VERSION = 'delivery-report-import-hash-v5-rounded';
+
 const importJobs = new Map();
 
-const JOB_TTL_MS = 1000 * 60 * 30; // 30 minutos
-const JOB_CLEANUP_INTERVAL = 1000 * 60 * 5; // 5 minutos
+const JOB_TTL_MS = 1000 * 60 * 30;
+const JOB_CLEANUP_INTERVAL = 1000 * 60 * 5;
 const MAX_JOBS = 100;
 
 const IMPORT_COMPARE_FIELDS = [
@@ -100,9 +102,7 @@ function cleanupOldJobs() {
   }
 }
 
-setInterval(() => {
-  cleanupOldJobs();
-}, JOB_CLEANUP_INTERVAL);
+setInterval(cleanupOldJobs, JOB_CLEANUP_INTERVAL);
 
 function generateJobId() {
   return crypto.randomUUID
@@ -164,6 +164,26 @@ function toInteger(value) {
   return Number.isNaN(parsed) ? null : parseInt(parsed, 10);
 }
 
+function excelSerialToDate(value) {
+  try {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (!parsed) return null;
+
+    return new Date(
+      Date.UTC(
+        parsed.y,
+        parsed.m - 1,
+        parsed.d,
+        parsed.H || 0,
+        parsed.M || 0,
+        parsed.S || 0
+      )
+    );
+  } catch {
+    return null;
+  }
+}
+
 function toDate(value) {
   if (!value) return null;
 
@@ -172,17 +192,7 @@ function toDate(value) {
   }
 
   if (typeof value === 'number') {
-    const parsed = XLSX.SSF.parse_date_code(value);
-    if (!parsed) return null;
-
-    return new Date(
-      parsed.y,
-      parsed.m - 1,
-      parsed.d,
-      parsed.H || 0,
-      parsed.M || 0,
-      parsed.S || 0
-    );
+    return excelSerialToDate(value);
   }
 
   const str = String(value).trim();
@@ -194,28 +204,32 @@ function toDate(value) {
   if (brMatch) {
     const [, dd, mm, yyyy, hh = '00', mi = '00', ss = '00'] = brMatch;
     const d = new Date(
-      Number(yyyy),
-      Number(mm) - 1,
-      Number(dd),
-      Number(hh),
-      Number(mi),
-      Number(ss)
+      Date.UTC(
+        Number(yyyy),
+        Number(mm) - 1,
+        Number(dd),
+        Number(hh),
+        Number(mi),
+        Number(ss)
+      )
     );
     return Number.isNaN(d.getTime()) ? null : d;
   }
 
   const isoMatch = str.match(
-    /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/
+    /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?(?:\.\d+)?(?:Z)?$/
   );
   if (isoMatch) {
     const [, yyyy, mm, dd, hh = '00', mi = '00', ss = '00'] = isoMatch;
     const d = new Date(
-      Number(yyyy),
-      Number(mm) - 1,
-      Number(dd),
-      Number(hh),
-      Number(mi),
-      Number(ss)
+      Date.UTC(
+        Number(yyyy),
+        Number(mm) - 1,
+        Number(dd),
+        Number(hh),
+        Number(mi),
+        Number(ss)
+      )
     );
     return Number.isNaN(d.getTime()) ? null : d;
   }
@@ -233,89 +247,150 @@ function normalizeKey(str) {
     .replace(/\s+/g, '_');
 }
 
-function normalizeDateOnly(value) {
+function normalizeDateUTC(value) {
   if (!value) return null;
 
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return null;
 
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-    d.getDate()
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(
+    d.getUTCDate()
   ).padStart(2, '0')}`;
 }
 
-function formatComparableValue(value) {
+function normalizeText(value) {
   if (value === undefined || value === null || value === '') return null;
 
-  if (value instanceof Date) {
-    return normalizeDateOnly(value);
-  }
+  const str = String(value).trim();
+  if (!str) return null;
+
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+function normalizeNumber(value) {
+  if (value === undefined || value === null || value === '') return null;
 
   if (typeof value === 'number') {
     return Number.isFinite(value) ? Number(value) : null;
   }
 
-  if (typeof value === 'string') {
-    const str = value.trim();
-    if (!str) return null;
+  let str = String(value).trim();
+  if (!str) return null;
 
-    const maybeDate = normalizeDateOnly(str);
-    if (maybeDate) return maybeDate;
+  str = str.replace(/\s+/g, '').replace(/R\$/gi, '');
 
-    const numeric = Number(str.replace(',', '.'));
-    if (!Number.isNaN(numeric) && /^-?\d+([.,]\d+)?$/.test(str)) {
-      return numeric;
-    }
-
-    return str
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim()
-      .toUpperCase();
+  if (str.includes('.') && str.includes(',')) {
+    str = str.replace(/\./g, '').replace(',', '.');
+  } else if (str.includes(',')) {
+    str = str.replace(',', '.');
   }
 
-  return String(value).trim();
+  const parsed = Number(str);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function roundNumber(value, scale = 2) {
+  if (value === undefined || value === null || value === '') return null;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+
+  const factor = 10 ** scale;
+  return Math.round((num + Number.EPSILON) * factor) / factor;
+}
+
+function normalizeNumberByField(field, value) {
+  const num = normalizeNumber(value);
+  if (num === null) return null;
+
+  if (field === 'icmsValor') return roundNumber(num, 2);
+  if (field === 'frete') return roundNumber(num, 2);
+  if (field === 'nfValor') return roundNumber(num, 2);
+  if (field === 'icmsPercent') return roundNumber(num, 2);
+
+  if (field === 'pesoReal') return roundNumber(num, 3);
+  if (field === 'pesoCubado') return roundNumber(num, 3);
+  if (field === 'pesoTaxado') return roundNumber(num, 3);
+  if (field === 'volume') return roundNumber(num, 3);
+
+  if (field === 'indice') return Number.isFinite(num) ? parseInt(num, 10) : null;
+
+  return num;
 }
 
 function normalizeValueByField(field, value) {
   if (value === undefined || value === null || value === '') return null;
 
-  if (DATE_FIELDS.has(field)) {
-    return normalizeDateOnly(value);
+  if (DATE_FIELDS.has(field)) return normalizeDateUTC(value);
+  if (NUMBER_FIELDS.has(field)) return normalizeNumberByField(field, value);
+  if (TEXT_FIELDS.has(field)) return normalizeText(value);
+
+  return normalizeText(value);
+}
+
+function normalizePayloadForPersistence(payload) {
+  return {
+    ...payload,
+    nfValor: normalizeNumberByField('nfValor', payload.nfValor),
+    frete: normalizeNumberByField('frete', payload.frete),
+    icmsPercent: normalizeNumberByField('icmsPercent', payload.icmsPercent),
+    icmsValor: normalizeNumberByField('icmsValor', payload.icmsValor),
+    pesoReal: normalizeNumberByField('pesoReal', payload.pesoReal),
+    pesoCubado: normalizeNumberByField('pesoCubado', payload.pesoCubado),
+    pesoTaxado: normalizeNumberByField('pesoTaxado', payload.pesoTaxado),
+    volume: normalizeNumberByField('volume', payload.volume),
+    indice: normalizeNumberByField('indice', payload.indice),
+  };
+}
+
+function stableStringify(obj) {
+  const ordered = {};
+  Object.keys(obj)
+    .sort()
+    .forEach((key) => {
+      ordered[key] = obj[key];
+    });
+
+  return JSON.stringify(ordered);
+}
+
+function sha256(value) {
+  return crypto.createHash('sha256').update(String(value)).digest('hex');
+}
+
+function buildComparableSubsetFromPayload(payload) {
+  const comparable = {};
+
+  for (const field of IMPORT_COMPARE_FIELDS) {
+    const rawValue = payload[field];
+
+    if (rawValue === undefined || rawValue === null || rawValue === '') continue;
+
+    comparable[field] = normalizeValueByField(field, rawValue);
   }
 
-  if (NUMBER_FIELDS.has(field)) {
-    if (typeof value === 'number') {
-      return Number.isFinite(value) ? Number(value) : null;
-    }
+  return comparable;
+}
 
-    let str = String(value).trim();
-    if (!str) return null;
+function buildComparableSubsetFromExisting(existing, payload) {
+  const comparable = {};
 
-    str = str.replace(/\s+/g, '').replace(/R\$/gi, '');
+  for (const field of IMPORT_COMPARE_FIELDS) {
+    const incomingRaw = payload[field];
 
-    if (str.includes('.') && str.includes(',')) {
-      str = str.replace(/\./g, '').replace(',', '.');
-    } else if (str.includes(',')) {
-      str = str.replace(',', '.');
-    }
+    if (incomingRaw === undefined || incomingRaw === null || incomingRaw === '') continue;
 
-    const parsed = Number(str);
-    return Number.isNaN(parsed) ? null : parsed;
+    const oldValue =
+      typeof existing.get === 'function' ? existing.get(field) : existing[field];
+
+    comparable[field] = normalizeValueByField(field, oldValue);
   }
 
-  if (TEXT_FIELDS.has(field)) {
-    const str = String(value).trim();
-    if (!str) return null;
-
-    return str
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim()
-      .toUpperCase();
-  }
-
-  return formatComparableValue(value);
+  return comparable;
 }
 
 function getUserMeta(user) {
@@ -359,41 +434,6 @@ async function registerHistory({
   );
 }
 
-function parseYearsParam(value) {
-  if (!value) return [];
-
-  if (Array.isArray(value)) {
-    return [...new Set(
-      value
-        .flatMap((item) => String(item).split(','))
-        .map((item) => Number(String(item).trim()))
-        .filter((n) => Number.isInteger(n) && n >= 2000 && n <= 2100)
-    )];
-  }
-
-  return [...new Set(
-    String(value)
-      .split(',')
-      .map((item) => Number(item.trim()))
-      .filter((n) => Number.isInteger(n) && n >= 2000 && n <= 2100)
-  )];
-}
-
-function buildYearFilter({ yearMode, years }) {
-  if (yearMode === 'all') return null;
-
-  const parsedYears = parseYearsParam(years);
-  if (!parsedYears.length) return null;
-
-  const ranges = parsedYears.map((year) => ({
-    emissao: {
-      [Op.gte]: new Date(`${year}-01-01T00:00:00.000Z`),
-      [Op.lte]: new Date(`${year}-12-31T23:59:59.999Z`),
-    },
-  }));
-
-  return { [Op.or]: ranges };
-}
 function mapRow(rawRow) {
   const row = {};
   Object.entries(rawRow || {}).forEach(([k, v]) => {
@@ -434,7 +474,12 @@ function mapRow(rawRow) {
     statusEntrega: clean(row.status_entrega ?? row.statusentrega),
 
     operacao: clean(row.operacao),
-    operacaoResumo: clean(row.operacao_resumo ?? row.operacaoresumo),
+    operacaoResumo: clean(
+      row.operacao_resumo ??
+      row.operacaoresumo ??
+      row.resumo_operacao ??
+      row.resumooperacao
+    ),
 
     cteNovo: cleanTextNumber(row.cte_novo ?? row.ctenovo),
     emissaoData: toDate(row.emissao_data ?? row.emissaodata),
@@ -456,11 +501,10 @@ function buildUpdatePayload(existing, payload) {
   for (const key of IMPORT_COMPARE_FIELDS) {
     const newValue = payload[key];
 
-    if (newValue === undefined || newValue === null || newValue === '') {
-      continue;
-    }
+    if (newValue === undefined || newValue === null || newValue === '') continue;
 
-    const oldValue = existing.get(key);
+    const oldValue =
+      typeof existing.get === 'function' ? existing.get(key) : existing[key];
 
     const oldComparable = normalizeValueByField(key, oldValue);
     const newComparable = normalizeValueByField(key, newValue);
@@ -478,14 +522,35 @@ function buildUpdatePayload(existing, payload) {
   return { data, changes };
 }
 
-async function findExistingRecord(payload, transaction) {
-  if (!payload.cte) return null;
+function normalizeCte(cte) {
+  const cleaned = cleanTextNumber(cte);
+  return cleaned ? String(cleaned).trim() : null;
+}
 
-  return DeliveryReport.findOne({
-    where: { cte: payload.cte },
-    transaction,
-    paranoid: false,
-  });
+function dedupeChunkByCte(chunk, warnings) {
+  const lastByCte = new Map();
+  const itemsWithoutCte = [];
+
+  for (const item of chunk) {
+    const cte = normalizeCte(item?.payload?.cte);
+
+    if (!cte) {
+      itemsWithoutCte.push(item);
+      continue;
+    }
+
+    if (lastByCte.has(cte)) {
+      const previous = lastByCte.get(cte);
+      warnings.push(
+        `Linha ${previous.line}: CTE ${cte} repetido no mesmo lote. Será considerada a última ocorrência (linha ${item.line}).`
+      );
+    }
+
+    item.payload.cte = cte;
+    lastByCte.set(cte, item);
+  }
+
+  return [...itemsWithoutCte, ...lastByCte.values()].sort((a, b) => a.line - b.line);
 }
 
 function createImportJob(fileName, user) {
@@ -497,6 +562,7 @@ function createImportJob(fileName, user) {
   const jobId = generateJobId();
   const job = {
     jobId,
+    version: IMPORT_CONTROLLER_VERSION,
     fileName,
     status: 'queued',
     createdAt: new Date().toISOString(),
@@ -514,7 +580,8 @@ function createImportJob(fileName, user) {
     progress: 0,
     currentLine: null,
     errors: [],
-    message: 'Importação na fila.',
+    warnings: [],
+    message: `Importação na fila. (${IMPORT_CONTROLLER_VERSION})`,
   };
 
   importJobs.set(jobId, job);
@@ -545,6 +612,7 @@ function getPublicJob(job) {
 
   return {
     jobId: job.jobId,
+    version: job.version,
     fileName: job.fileName,
     status: job.status,
     createdAt: job.createdAt,
@@ -560,14 +628,38 @@ function getPublicJob(job) {
     currentLine: job.currentLine,
     message: job.message,
     errors: job.errors || [],
+    warnings: job.warnings || [],
   };
 }
+
 function chunkArray(arr, size = 100) {
   const chunks = [];
   for (let i = 0; i < arr.length; i += size) {
     chunks.push(arr.slice(i, i + size));
   }
   return chunks;
+}
+
+function isFatalConnectionError(err) {
+  const message = String(err?.message || err?.parent?.message || err?.original?.message || '').toLowerCase();
+
+  return (
+    message.includes('closed state') ||
+    message.includes('connection is closed') ||
+    message.includes('cannot enqueue') ||
+    message.includes('connection lost') ||
+    message.includes('server has gone away') ||
+    err?.parent?.fatal === true ||
+    err?.original?.fatal === true
+  );
+}
+
+async function rollbackQuietly(transaction) {
+  try {
+    if (transaction && !transaction.finished) {
+      await transaction.rollback();
+    }
+  } catch {}
 }
 
 async function processImportJob({ jobId, buffer, user }) {
@@ -577,7 +669,7 @@ async function processImportJob({ jobId, buffer, user }) {
     updateImportJob(jobId, {
       status: 'processing',
       startedAt: new Date().toISOString(),
-      message: 'Lendo planilha...',
+      message: `Lendo planilha... (${IMPORT_CONTROLLER_VERSION})`,
     });
 
     const workbook = XLSX.read(buffer, {
@@ -605,7 +697,7 @@ async function processImportJob({ jobId, buffer, user }) {
 
     const mappedRows = jsonRows.map((row, index) => ({
       line: index + 2,
-      payload: mapRow(row),
+      payload: normalizePayloadForPersistence(mapRow(row)),
     }));
 
     updateImportJob(jobId, {
@@ -617,7 +709,8 @@ async function processImportJob({ jobId, buffer, user }) {
       progress: 0,
       currentLine: null,
       errors: [],
-      message: 'Processando planilha em lotes de 100...',
+      warnings: [],
+      message: `Processando planilha em lotes de 100... (${IMPORT_CONTROLLER_VERSION})`,
     });
 
     const chunks = chunkArray(mappedRows, 100);
@@ -626,55 +719,74 @@ async function processImportJob({ jobId, buffer, user }) {
     let updated = 0;
     let ignored = 0;
     const errors = [];
+    const warnings = [];
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-      const chunk = chunks[chunkIndex];
+      const originalChunk = chunks[chunkIndex];
+      const chunk = dedupeChunkByCte(originalChunk, warnings);
+
       const ctes = [
         ...new Set(
           chunk
-            .map((item) => item.payload?.cte)
+            .map((item) => normalizeCte(item.payload?.cte))
             .filter(Boolean)
         ),
       ];
 
       updateImportJob(jobId, {
         currentLine: chunk[0]?.line || null,
-        processed: chunkIndex * 100,
+        processed: Math.min(chunkIndex * 100, mappedRows.length),
         inserted,
         updated,
         ignored,
         errors,
-        message: `Processando lote ${chunkIndex + 1}/${chunks.length}...`,
+        warnings,
+        message: `Processando lote ${chunkIndex + 1}/${chunks.length}... (${IMPORT_CONTROLLER_VERSION})`,
       });
 
-      const transaction = await sequelize.transaction();
+      let transaction;
 
       try {
+        transaction = await sequelize.transaction();
+
         const existingRows = ctes.length
           ? await DeliveryReport.findAll({
-              where: {
-                cte: { [Op.in]: ctes },
-              },
+              where: { cte: { [Op.in]: ctes } },
               transaction,
               paranoid: false,
+              order: [['id', 'ASC']],
             })
           : [];
 
-        const existingMap = new Map(
-          existingRows.map((row) => [String(row.cte).trim(), row])
-        );
+        const existingMap = new Map();
+
+        for (const row of existingRows) {
+          const cteKey = normalizeCte(row.cte);
+          if (!cteKey) continue;
+
+          if (!existingMap.has(cteKey)) {
+            existingMap.set(cteKey, row);
+          } else {
+            warnings.push(
+              `Banco já possui mais de um registro para o CTE ${cteKey}. Será usado o primeiro encontrado (ID ${existingMap.get(cteKey).id}).`
+            );
+          }
+        }
 
         for (const item of chunk) {
           const { line, payload } = item;
+          const cteKey = normalizeCte(payload?.cte);
 
           try {
-            if (!payload.cte) {
+            if (!cteKey) {
               ignored++;
-              errors.push(`Linha ${line}: sem CTE.`);
+              warnings.push(`Linha ${line}: ignorada porque está sem CTE.`);
               continue;
             }
 
-            const existing = existingMap.get(String(payload.cte).trim());
+            payload.cte = cteKey;
+
+            let existing = existingMap.get(cteKey);
 
             if (!existing) {
               const created = await DeliveryReport.create(
@@ -696,57 +808,122 @@ async function processImportJob({ jobId, buffer, user }) {
                 userMeta,
               });
 
+              existingMap.set(cteKey, created);
               inserted++;
+              continue;
+            }
+
+            const incomingComparable = buildComparableSubsetFromPayload(payload);
+            const existingComparable = buildComparableSubsetFromExisting(existing, payload);
+
+            const incomingHash = sha256(stableStringify(incomingComparable));
+            const existingHash = sha256(stableStringify(existingComparable));
+            const shouldRestoreDeleted = Boolean(existing.deletedAt);
+
+            if (incomingHash === existingHash && !shouldRestoreDeleted) {
+              ignored++;
+              warnings.push(`Linha ${line}: ignorada (sem alterações).`);
               continue;
             }
 
             const { data, changes } = buildUpdatePayload(existing, payload);
 
-            if (!changes.length) {
+            if (!changes.length && !shouldRestoreDeleted) {
               ignored++;
-              errors.push(`Linha ${line}: ignorada (sem alterações).`);
+              warnings.push(`Linha ${line}: ignorada (hash diferente sem mudança real).`);
               continue;
             }
+
+            console.log('[deliveryReport.import.diff]', {
+              line,
+              cte: cteKey,
+              incomingHash,
+              existingHash,
+              incomingComparable,
+              existingComparable,
+              changes,
+            });
 
             const updatePayload = {
               ...data,
               updatedById: user?.id || null,
             };
 
-            if (existing.deletedAt) {
+            if (shouldRestoreDeleted) {
               updatePayload.deletedAt = null;
               updatePayload.deletedById = null;
             }
 
             await existing.update(updatePayload, { transaction });
 
-            for (const change of changes) {
+            if (changes.length) {
+              for (const change of changes) {
+                await registerHistory({
+                  transaction,
+                  deliveryReportId: existing.id,
+                  actionType: 'UPDATED',
+                  comments: `Atualizado via Excel na linha ${line}.`,
+                  userMeta,
+                  fieldName: change.fieldName,
+                  oldValue: change.oldValue,
+                  newValue: change.newValue,
+                });
+              }
+            }
+
+            if (shouldRestoreDeleted) {
               await registerHistory({
                 transaction,
                 deliveryReportId: existing.id,
-                actionType: 'UPDATED',
-                comments: `Atualizado via Excel na linha ${line}.`,
+                actionType: 'RESTORED',
+                comments: `Registro restaurado via Excel na linha ${line}.`,
                 userMeta,
-                fieldName: change.fieldName,
-                oldValue: change.oldValue,
-                newValue: change.newValue,
               });
             }
 
+            existing = await DeliveryReport.findByPk(existing.id, {
+              transaction,
+              paranoid: false,
+            });
+
+            existingMap.set(cteKey, existing);
             updated++;
           } catch (err) {
-            ignored++;
+            console.error('[deliveryReport.import.line_error]', {
+              line,
+              cte: cteKey || null,
+              error: err.message,
+            });
+
+            if (isFatalConnectionError(err)) {
+              throw err;
+            }
+
             errors.push(`Linha ${line}: ${err.message}`);
           }
         }
 
         await transaction.commit();
       } catch (err) {
-        try {
-          if (!transaction.finished) {
-            await transaction.rollback();
-          }
-        } catch {}
+        await rollbackQuietly(transaction);
+
+        if (isFatalConnectionError(err)) {
+          console.error('[deliveryReport.processImportJob.chunk_fatal]', err);
+
+          updateImportJob(jobId, {
+            status: 'error',
+            finishedAt: new Date().toISOString(),
+            currentLine: null,
+            inserted,
+            updated,
+            ignored,
+            errors: [...errors, `Falha fatal de conexão com o banco no lote ${chunkIndex + 1}.`],
+            warnings,
+            message: `Falha fatal de conexão com o banco. (${IMPORT_CONTROLLER_VERSION})`,
+          });
+
+          return;
+        }
 
         throw err;
       }
@@ -758,7 +935,8 @@ async function processImportJob({ jobId, buffer, user }) {
         updated,
         ignored,
         errors,
-        message: `Lote ${chunkIndex + 1}/${chunks.length} concluído.`,
+        warnings,
+        message: `Lote ${chunkIndex + 1}/${chunks.length} concluído. (${IMPORT_CONTROLLER_VERSION})`,
       });
     }
 
@@ -771,7 +949,8 @@ async function processImportJob({ jobId, buffer, user }) {
       updated,
       ignored,
       errors,
-      message: 'Importação concluída.',
+      warnings,
+      message: `Importação concluída. (${IMPORT_CONTROLLER_VERSION})`,
     });
   } catch (error) {
     console.error('[deliveryReport.processImportJob]', error);
@@ -780,7 +959,7 @@ async function processImportJob({ jobId, buffer, user }) {
       status: 'error',
       finishedAt: new Date().toISOString(),
       currentLine: null,
-      message: error?.message || 'Erro ao importar planilha.',
+      message: error?.message || `Erro ao importar planilha. (${IMPORT_CONTROLLER_VERSION})`,
     });
   }
 }
@@ -802,9 +981,10 @@ exports.importExcel = async (req, res) => {
     });
 
     return res.status(202).json({
-      message: 'Importação iniciada com sucesso.',
+      message: `Importação iniciada com sucesso. (${IMPORT_CONTROLLER_VERSION})`,
       jobId: job.jobId,
       status: job.status,
+      version: IMPORT_CONTROLLER_VERSION,
     });
   } catch (error) {
     console.error('[deliveryReport.importExcel.start]', error);

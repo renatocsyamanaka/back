@@ -349,12 +349,24 @@ async function loadProjectWithDetails(projectId) {
 async function recalcProjectStats(projectId, transaction) {
   const rows = await InstallationProjectProgress.findAll({
     where: { projectId },
+    include: [
+      { model: InstallationProjectProgressVehicle, as: 'vehicles' }
+    ],
     transaction,
   });
 
   const trucksDone = rows.reduce((sum, item) => {
-    const completed = Number(item.completedInstallations ?? item.trucksDoneToday ?? 0);
-    return sum + completed;
+    let value = 0;
+
+    if (item.completedInstallations && item.completedInstallations > 0) {
+      value = item.completedInstallations;
+    } else if (item.trucksDoneToday && item.trucksDoneToday > 0) {
+      value = item.trucksDoneToday;
+    } else if (item.vehicles && item.vehicles.length > 0) {
+      value = item.vehicles.length;
+    }
+
+    return sum + value;
   }, 0);
 
   await InstallationProject.update(
@@ -531,9 +543,13 @@ module.exports = {
   },
 
   async getById(req, res) {
-    const project = await loadProjectWithDetails(req.params.id);
+    const project = await InstallationProject.findByPk(req.params.id);
     if (!project) return notFound(res, 'Projeto não encontrado');
-    return ok(res, project);
+
+    await recalcProjectStats(project.id);
+
+    const full = await loadProjectWithDetails(project.id);
+    return ok(res, full);
   },
 
   async create(req, res) {
@@ -1266,8 +1282,15 @@ module.exports = {
         }),
       ]);
 
+      function getValue(item) {
+        if (item.completedInstallations && item.completedInstallations > 0) return item.completedInstallations;
+        if (item.trucksDoneToday && item.trucksDoneToday > 0) return item.trucksDoneToday;
+        if (item.vehicles && item.vehicles.length > 0) return item.vehicles.length;
+        return 0;
+      }
+
       const dailyCompleted = todayProgress.reduce(
-        (acc, item) => acc + Number(item.completedInstallations ?? item.trucksDoneToday ?? 0),
+        (acc, item) => acc + getValue(item),
         0
       );
 
