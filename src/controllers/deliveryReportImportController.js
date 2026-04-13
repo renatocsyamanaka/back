@@ -1,5 +1,6 @@
 const XLSX = require('xlsx');
 const crypto = require('crypto');
+const { Op } = require('sequelize');
 const {
   DeliveryReport,
   DeliveryReportHistory,
@@ -478,25 +479,13 @@ function buildUpdatePayload(existing, payload) {
 }
 
 async function findExistingRecord(payload, transaction) {
-  if (payload.cte) {
-    const byCte = await DeliveryReport.findOne({
-      where: { cte: payload.cte },
-      transaction,
-      paranoid: false,
-    });
-    if (byCte) return byCte;
-  }
+  if (!payload.cte) return null;
 
-  if (payload.notaFiscal) {
-    const byNf = await DeliveryReport.findOne({
-      where: { notaFiscal: payload.notaFiscal },
-      transaction,
-      paranoid: false,
-    });
-    if (byNf) return byNf;
-  }
-
-  return null;
+  return DeliveryReport.findOne({
+    where: { cte: payload.cte },
+    transaction,
+    paranoid: false,
+  });
 }
 
 function createImportJob(fileName, user) {
@@ -573,9 +562,15 @@ function getPublicJob(job) {
     errors: job.errors || [],
   };
 }
+function chunkArray(arr, size = 100) {
+  const chunks = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
 
 async function processImportJob({ jobId, buffer, user }) {
-  let transaction;
   const userMeta = getUserMeta(user);
 
   try {
@@ -608,130 +603,170 @@ async function processImportJob({ jobId, buffer, user }) {
       throw new Error('Planilha vazia.');
     }
 
+    const mappedRows = jsonRows.map((row, index) => ({
+      line: index + 2,
+      payload: mapRow(row),
+    }));
+
     updateImportJob(jobId, {
-      totalLinhas: jsonRows.length,
-      message: 'Processando linhas da planilha...',
+      totalLinhas: mappedRows.length,
+      processed: 0,
+      inserted: 0,
+      updated: 0,
+      ignored: 0,
+      progress: 0,
+      currentLine: null,
+      errors: [],
+      message: 'Processando planilha em lotes de 100...',
     });
 
-    transaction = await sequelize.transaction();
+    const chunks = chunkArray(mappedRows, 100);
 
     let inserted = 0;
     let updated = 0;
     let ignored = 0;
     const errors = [];
 
-    for (let i = 0; i < jsonRows.length; i++) {
-      const line = i + 2;
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+      const chunk = chunks[chunkIndex];
+      const ctes = [
+        ...new Set(
+          chunk
+            .map((item) => item.payload?.cte)
+            .filter(Boolean)
+        ),
+      ];
 
       updateImportJob(jobId, {
-        currentLine: line,
-        processed: i,
+        currentLine: chunk[0]?.line || null,
+        processed: chunkIndex * 100,
         inserted,
         updated,
         ignored,
-        message: `Processando linha ${line} de ${jsonRows.length}...`,
+        errors,
+        message: `Processando lote ${chunkIndex + 1}/${chunks.length}...`,
       });
 
+      const transaction = await sequelize.transaction();
+
       try {
-        const payload = mapRow(jsonRows[i]);
+        const existingRows = ctes.length
+          ? await DeliveryReport.findAll({
+              where: {
+                cte: { [Op.in]: ctes },
+              },
+              transaction,
+              paranoid: false,
+            })
+          : [];
 
-        if (!payload.cte && !payload.notaFiscal) {
-          ignored++;
-          errors.push(`Linha ${line}: sem CTE e sem Nota Fiscal.`);
-          updateImportJob(jobId, { inserted, updated, ignored, errors });
-          continue;
-        }
+        const existingMap = new Map(
+          existingRows.map((row) => [String(row.cte).trim(), row])
+        );
 
-        const existing = await findExistingRecord(payload, transaction);
+        for (const item of chunk) {
+          const { line, payload } = item;
 
-        if (!existing) {
-          const created = await DeliveryReport.create(
-            {
-              ...payload,
-              createdById: user?.id || null,
+          try {
+            if (!payload.cte) {
+              ignored++;
+              errors.push(`Linha ${line}: sem CTE.`);
+              continue;
+            }
+
+            const existing = existingMap.get(String(payload.cte).trim());
+
+            if (!existing) {
+              const created = await DeliveryReport.create(
+                {
+                  ...payload,
+                  createdById: user?.id || null,
+                  updatedById: user?.id || null,
+                  deletedAt: null,
+                  deletedById: null,
+                },
+                { transaction }
+              );
+
+              await registerHistory({
+                transaction,
+                deliveryReportId: created.id,
+                actionType: 'IMPORTED',
+                comments: `Importado via Excel na linha ${line}.`,
+                userMeta,
+              });
+
+              inserted++;
+              continue;
+            }
+
+            const { data, changes } = buildUpdatePayload(existing, payload);
+
+            if (!changes.length) {
+              ignored++;
+              errors.push(`Linha ${line}: ignorada (sem alterações).`);
+              continue;
+            }
+
+            const updatePayload = {
+              ...data,
               updatedById: user?.id || null,
-              deletedAt: null,
-              deletedById: null,
-            },
-            { transaction }
-          );
+            };
 
-          await registerHistory({
-            transaction,
-            deliveryReportId: created.id,
-            actionType: 'IMPORTED',
-            comments: `Importado via Excel na linha ${line}.`,
-            userMeta,
-          });
+            if (existing.deletedAt) {
+              updatePayload.deletedAt = null;
+              updatePayload.deletedById = null;
+            }
 
-          inserted++;
-          updateImportJob(jobId, { inserted, updated, ignored });
-          continue;
+            await existing.update(updatePayload, { transaction });
+
+            for (const change of changes) {
+              await registerHistory({
+                transaction,
+                deliveryReportId: existing.id,
+                actionType: 'UPDATED',
+                comments: `Atualizado via Excel na linha ${line}.`,
+                userMeta,
+                fieldName: change.fieldName,
+                oldValue: change.oldValue,
+                newValue: change.newValue,
+              });
+            }
+
+            updated++;
+          } catch (err) {
+            ignored++;
+            errors.push(`Linha ${line}: ${err.message}`);
+          }
         }
 
-        const { data, changes } = buildUpdatePayload(existing, payload);
-
-        if (!changes.length) {
-          ignored++;
-          errors.push(`Linha ${line}: ignorada (sem alterações).`);
-          updateImportJob(jobId, {
-            inserted,
-            updated,
-            ignored,
-            errors,
-          });
-          continue;
-        }
-
-        const updatePayload = {
-          ...data,
-          updatedById: user?.id || null,
-        };
-
-        if (existing.deletedAt) {
-          updatePayload.deletedAt = null;
-          updatePayload.deletedById = null;
-        }
-
-        await existing.update(updatePayload, { transaction });
-
-        for (const change of changes) {
-          await registerHistory({
-            transaction,
-            deliveryReportId: existing.id,
-            actionType: 'UPDATED',
-            comments: `Atualizado via Excel na linha ${line}.`,
-            userMeta,
-            fieldName: change.fieldName,
-            oldValue: change.oldValue,
-            newValue: change.newValue,
-          });
-        }
-
-        updated++;
-        updateImportJob(jobId, { inserted, updated, ignored });
+        await transaction.commit();
       } catch (err) {
-        ignored++;
-        errors.push(`Linha ${line}: ${err.message}`);
-        updateImportJob(jobId, { inserted, updated, ignored, errors });
-      } finally {
-        updateImportJob(jobId, {
-          processed: i + 1,
-          inserted,
-          updated,
-          ignored,
-          errors,
-        });
-      }
-    }
+        try {
+          if (!transaction.finished) {
+            await transaction.rollback();
+          }
+        } catch {}
 
-    await transaction.commit();
+        throw err;
+      }
+
+      updateImportJob(jobId, {
+        currentLine: chunk[chunk.length - 1]?.line || null,
+        processed: Math.min((chunkIndex + 1) * 100, mappedRows.length),
+        inserted,
+        updated,
+        ignored,
+        errors,
+        message: `Lote ${chunkIndex + 1}/${chunks.length} concluído.`,
+      });
+    }
 
     updateImportJob(jobId, {
       status: 'done',
       finishedAt: new Date().toISOString(),
       currentLine: null,
-      processed: jsonRows.length,
+      processed: mappedRows.length,
       inserted,
       updated,
       ignored,
@@ -739,12 +774,6 @@ async function processImportJob({ jobId, buffer, user }) {
       message: 'Importação concluída.',
     });
   } catch (error) {
-    if (transaction) {
-      try {
-        await transaction.rollback();
-      } catch {}
-    }
-
     console.error('[deliveryReport.processImportJob]', error);
 
     updateImportJob(jobId, {
