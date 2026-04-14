@@ -34,11 +34,34 @@ const Sector = require('./Sector');
 const NewsSector = require('./NewsSector');
 const AtaRegistration = require('./AtaRegistration');
 const AtaDocument = require('./AtaDocument');
-
+const DashboardBanner = require('./DashboardBanner');
+const SystemUpdate = require('./SystemUpdate');
 // Solicitação Peças
 const PartRequest = require('./PartRequest');
 const PartRequestItem = require('./PartRequestItem');
 const PartRequestHistory = require('./PartRequestHistory');
+
+
+
+// ----------------- Dashboard Banners -----------------
+DashboardBanner.belongsTo(User, {  as: 'createdBy',  foreignKey: 'createdById',  onDelete: 'SET NULL',  onUpdate: 'CASCADE',});
+User.hasMany(DashboardBanner, {  as: 'dashboardBannersCreated',  foreignKey: 'createdById',});
+
+DashboardBanner.belongsTo(User, {  as: 'updatedBy',  foreignKey: 'updatedById',  onDelete: 'SET NULL',  onUpdate: 'CASCADE',});
+User.hasMany(DashboardBanner, {  as: 'dashboardBannersUpdated',  foreignKey: 'updatedById',});
+
+DashboardBanner.belongsTo(User, {  as: 'deletedBy',  foreignKey: 'deletedById',  onDelete: 'SET NULL',  onUpdate: 'CASCADE',});
+User.hasMany(DashboardBanner, {  as: 'dashboardBannersDeleted',  foreignKey: 'deletedById',});
+
+// ----------------- System Updates -----------------
+SystemUpdate.belongsTo(User, {  as: 'createdBy',  foreignKey: 'createdById',});
+User.hasMany(SystemUpdate, {  as: 'systemUpdatesCreated',  foreignKey: 'createdById',});
+
+SystemUpdate.belongsTo(User, {  as: 'updatedBy',  foreignKey: 'updatedById',});
+User.hasMany(SystemUpdate, {  as: 'systemUpdatesUpdated',  foreignKey: 'updatedById',});
+
+SystemUpdate.belongsTo(User, {  as: 'deletedBy',  foreignKey: 'deletedById',});
+User.hasMany(SystemUpdate, {  as: 'systemUpdatesDeleted',  foreignKey: 'deletedById',});
 
 // ----------------- Relações TeamMember -----------------
 TeamMember.belongsTo(User, { as: 'user', foreignKey: 'userId' });
@@ -613,4 +636,6 @@ module.exports = {
   NeedInternalDocument,
   AtaRegistration,
   AtaDocument,
+  DashboardBanner,
+  SystemUpdate,
 };

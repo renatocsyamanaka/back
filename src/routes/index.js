@@ -41,6 +41,11 @@ mount('/timeoff', './timeoff.routes');
 mount('/tasks', './tasks.routes');
 mount('/news', './news.routes');
 
+/* IMPORTANTE: dashboard */
+mount('/dashboard-home', './dashboard-home.routes');
+mount('/dashboard-banners', './dashboard-banners.routes');
+mount('/system-updates', './system-updates.routes');
+
 /* IMPORTANTE: dashboard antes da rota genérica */
 mount('/installation-projects/dashboard', './installationProjectsDashboard.routes');
 mount('/installation-projects', './installationProjects.routes');
