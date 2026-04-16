@@ -316,16 +316,9 @@ function resolveProjectCoords(project) {
   return null;
 }
 
-async function loadDashboardProjects(filters = {}) {
+async function loadDashboardProjects(filters = {}, options = {}) {
   const where = {};
 
-  // ======================================================
-  // recordType
-  // Regra:
-  // - por padrão, dashboard mostra SOMENTE PROJECT
-  // - se vier recordType=BASE, mostra só base
-  // - se vier recordType=ALL, não filtra
-  // ======================================================
   const recordTypeRaw = String(filters.recordType || 'PROJECT')
     .trim()
     .toUpperCase();
@@ -505,7 +498,7 @@ async function loadDashboardProjects(filters = {}) {
   const startDate = parseDate(filters.startDate);
   const endDate = parseDate(filters.endDate);
 
-  if (startDate || endDate) {
+  if (!options.ignorePeriod && (startDate || endDate)) {
     rows = rows.filter((p) => {
       const projectMatches = overlapPeriod(
         p.startPlannedAt || p.startAt,
@@ -631,6 +624,135 @@ function buildProductivity(projects) {
     compareWeeklyPct,
     byDay: daily,
     byWeek: weekly,
+  };
+}
+
+function buildProductivityDayDetails(projects, date) {
+  const target = parseDate(date);
+  if (!target) {
+    return {
+      date: null,
+      totalProjects: 0,
+      totalVehicles: 0,
+      data: [],
+    };
+  }
+
+  const map = new Map();
+
+  for (const project of projects) {
+    const progressList = safeArray(project.progress).filter((progress) => {
+      return dateOnly(progress.date) === target;
+    });
+
+    if (!progressList.length) continue;
+
+    const vehicles = progressList.flatMap((progress) =>
+      safeArray(progress.vehicles).map((vehicle) => ({
+        id: vehicle.id,
+        plate: vehicle.plate || '-',
+        serial: vehicle.serial || '-',
+      }))
+    );
+
+    if (!vehicles.length) continue;
+
+    map.set(project.id, {
+      projectId: project.id,
+      title: project.title,
+      af: project.af || null,
+      clientId: project.client?.id || project.clientId || null,
+      clientName: project.client?.name || project.client?.nomeFantasia || '-',
+      supervisorId: project.supervisor?.id || project.supervisorId || null,
+      supervisorName: project.supervisor?.name || '-',
+      coordinatorId: project.coordinator?.id || project.coordinatorId || null,
+      coordinatorName: project.coordinator?.name || '-',
+      vehiclesCount: vehicles.length,
+      vehicles,
+      projectUrl: `/projetos-instalacao/${project.id}`,
+    });
+  }
+
+  const data = [...map.values()].sort(
+    (a, b) => b.vehiclesCount - a.vehiclesCount || String(a.title || '').localeCompare(String(b.title || ''))
+  );
+
+  return {
+    date: target,
+    totalProjects: data.length,
+    totalVehicles: data.reduce((sum, item) => sum + item.vehiclesCount, 0),
+    data,
+  };
+}
+
+function buildProductivityWeekDetails(projects, weekStart) {
+  const target = parseDate(weekStart);
+  if (!target) {
+    return {
+      weekStart: null,
+      totalProjects: 0,
+      totalVehicles: 0,
+      data: [],
+    };
+  }
+
+  const start = dayjs(target).startOf('week');
+  const end = dayjs(target).endOf('week');
+
+  const map = new Map();
+
+  for (const project of projects) {
+    const progressList = safeArray(project.progress).filter((progress) => {
+      const d = dateOnly(progress.date);
+      if (!d) return false;
+
+      const current = dayjs(d);
+      return (
+        current.isSame(start, 'day') ||
+        current.isSame(end, 'day') ||
+        (current.isAfter(start, 'day') && current.isBefore(end, 'day'))
+      );
+    });
+
+    if (!progressList.length) continue;
+
+    const vehicles = progressList.flatMap((progress) =>
+      safeArray(progress.vehicles).map((vehicle) => ({
+        id: vehicle.id,
+        plate: vehicle.plate || '-',
+        serial: vehicle.serial || '-',
+        date: dateOnly(progress.date),
+      }))
+    );
+
+    if (!vehicles.length) continue;
+
+    map.set(project.id, {
+      projectId: project.id,
+      title: project.title,
+      af: project.af || null,
+      clientId: project.client?.id || project.clientId || null,
+      clientName: project.client?.name || project.client?.nomeFantasia || '-',
+      supervisorId: project.supervisor?.id || project.supervisorId || null,
+      supervisorName: project.supervisor?.name || '-',
+      coordinatorId: project.coordinator?.id || project.coordinatorId || null,
+      coordinatorName: project.coordinator?.name || '-',
+      vehiclesCount: vehicles.length,
+      vehicles,
+      projectUrl: `/projetos-instalacao/${project.id}`,
+    });
+  }
+
+  const data = [...map.values()].sort(
+    (a, b) => b.vehiclesCount - a.vehiclesCount || String(a.title || '').localeCompare(String(b.title || ''))
+  );
+
+  return {
+    weekStart: start.format('YYYY-MM-DD'),
+    weekEnd: end.format('YYYY-MM-DD'),
+    totalProjects: data.length,
+    totalVehicles: data.reduce((sum, item) => sum + item.vehiclesCount, 0),
+    data,
   };
 }
 
@@ -1119,7 +1241,7 @@ function buildMapData(projects) {
 
 async function delayedProjects(req, res) {
   try {
-    const projects = await loadDashboardProjects(req.query);
+    const projects = await loadDashboardProjects(req.query, { ignorePeriod: true });
 
     return ok(res, {
       filters: req.query,
@@ -1151,9 +1273,24 @@ async function overview(req, res) {
   try {
     const projects = await loadDashboardProjects(req.query);
 
+    const totalProjects = projects.length;
+
+    const finishedProjects = projects.filter(
+      (project) => project.status === 'FINALIZADO'
+    ).length;
+
+    const pendingProjects = projects.filter(
+      (project) => project.status !== 'FINALIZADO'
+    ).length;
+
     const response = {
       filters: req.query,
-      overview: buildOverview(projects),
+      overview: {
+        ...buildOverview(projects),
+        totalProjects,
+        finishedProjects,
+        pendingProjects,
+      },
       productivity: buildProductivity(projects),
       byClient: buildByClient(projects),
       byStatus: buildByStatus(projects),
@@ -1199,6 +1336,46 @@ async function productivity(req, res) {
   } catch (err) {
     console.error('installationProjectDashboard.productivity:', err);
     return bad(res, err.message || 'Erro ao montar produtividade');
+  }
+}
+
+async function productivityDayDetails(req, res) {
+  try {
+    const { date } = req.query;
+
+    if (!date) {
+      return bad(res, 'Informe a data para consultar os detalhes do dia');
+    }
+
+    const projects = await loadDashboardProjects(req.query);
+
+    return ok(res, {
+      filters: req.query,
+      ...buildProductivityDayDetails(projects, date),
+    });
+  } catch (err) {
+    console.error('installationProjectDashboard.productivityDayDetails:', err);
+    return bad(res, err.message || 'Erro ao montar detalhes da produtividade por dia');
+  }
+}
+
+async function productivityWeekDetails(req, res) {
+  try {
+    const { weekStart } = req.query;
+
+    if (!weekStart) {
+      return bad(res, 'Informe a semana para consultar os detalhes');
+    }
+
+    const projects = await loadDashboardProjects(req.query);
+
+    return ok(res, {
+      filters: req.query,
+      ...buildProductivityWeekDetails(projects, weekStart),
+    });
+  } catch (err) {
+    console.error('installationProjectDashboard.productivityWeekDetails:', err);
+    return bad(res, err.message || 'Erro ao montar detalhes da produtividade por semana');
   }
 }
 
@@ -1332,6 +1509,8 @@ module.exports = {
   overview,
   summary,
   productivity,
+  productivityDayDetails,
+  productivityWeekDetails,
   byClient,
   byStatus,
   successRate,

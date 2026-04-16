@@ -7,6 +7,8 @@ router.get('/overview', (req, res, next) => {
 
 router.get('/summary', ctrl.summary);
 router.get('/productivity', ctrl.productivity);
+router.get('/productivity/day-details', ctrl.productivityDayDetails);
+router.get('/productivity/week-details', ctrl.productivityWeekDetails);
 router.get('/by-client', ctrl.byClient);
 router.get('/by-status', ctrl.byStatus);
 router.get('/success-rate', ctrl.successRate);
@@ -17,6 +19,5 @@ router.get('/ending-soon', ctrl.endingSoon);
 router.get('/by-product', ctrl.byProduct);
 router.get('/map', ctrl.map);
 router.get('/delayed-projects', ctrl.delayedProjects);
-
 
 module.exports = router;

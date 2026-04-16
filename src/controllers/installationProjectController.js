@@ -152,7 +152,40 @@ function normalizeExcelRowKeys(row = {}) {
   }
   return out;
 }
+  async function sendDailyIfHasMovement(projectId) {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
 
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const progressToday = await InstallationProjectProgress.findAll({
+      where: {
+        projectId,
+        date: {
+          [Op.between]: [todayStart, todayEnd],
+        },
+      },
+      include: [
+        {
+          model: InstallationProjectProgressVehicle,
+          as: 'vehicles',
+        },
+      ],
+    });
+
+    // 🔴 REGRA PRINCIPAL
+    const hasMovement = progressToday.some(p => p.vehicles?.length > 0);
+
+    if (!hasMovement) {
+      console.log(`[EMAIL] Sem movimentação hoje - NÃO enviado`);
+      return;
+    }
+
+    // ✅ Se tiver movimentação, envia
+    await sendDailyEmail(projectId, progressToday);
+  }
+  
 async function findCoordinatorIdFromSupervisor(supervisorId) {
   const supervisor = await User.findByPk(supervisorId, {
     attributes: ['id', 'name', 'managerId'],
