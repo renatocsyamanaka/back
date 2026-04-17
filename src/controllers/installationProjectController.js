@@ -1516,8 +1516,10 @@ async importBaseExcel(req, res) {
     const batch = buildImportBatch();
     const touchedIds = [];
     const errors = [];
+    const skipped = [];
+
     let importedCount = 0;
-    let updatedCount = 0;
+    let skippedCount = 0;
 
     for (const entry of entries) {
       let t;
@@ -1527,112 +1529,104 @@ async importBaseExcel(req, res) {
 
         console.log('IMPORT BASE -> processando AF:', entry.af);
 
+        // Valida se AF já existe em qualquer registro:
+        // BASE ou PROJECT
         const existing = await InstallationProject.findOne({
           where: { af: entry.af },
+          attributes: ['id', 'af', 'recordType', 'title'],
           transaction: t,
+          lock: t.LOCK.UPDATE,
         });
 
         if (existing) {
-          console.log('IMPORT BASE -> AF já existe:', entry.af, 'ID:', existing.id);
-
-          await existing.update(
-            {
-              title: entry.clientName || existing.title || `Implantação ${entry.af}`,
-              saleDate: entry.saleDate || existing.saleDate || null,
-              trucksTotal: entry.totalEquip || existing.trucksTotal || 1,
-              equipmentsTotal: entry.totalEquip || existing.equipmentsTotal || 0,
-              recordType: 'BASE',
-              importBatch: batch,
-              updatedById: req.user.id,
-            },
-            { transaction: t }
+          console.log(
+            'IMPORT BASE -> AF ignorada porque já existe:',
+            entry.af,
+            'ID:',
+            existing.id,
+            'TIPO:',
+            existing.recordType
           );
 
-          await InstallationProjectItem.destroy({
-            where: { projectId: existing.id },
-            transaction: t,
+          await t.commit();
+
+          skipped.push({
+            af: entry.af,
+            id: existing.id,
+            recordType: existing.recordType,
+            reason:
+              existing.recordType === 'PROJECT'
+                ? 'AF já existe em PROJETO'
+                : 'AF já existe na BASE',
           });
 
-          if (entry.items.length) {
-            await InstallationProjectItem.bulkCreate(
-              entry.items.map((item) => ({
-                projectId: existing.id,
-                equipmentName: item.equipmentName,
-                equipmentCode: item.equipmentCode,
-                qty: item.qty,
-              })),
-              { transaction: t }
-            );
-          }
+          skippedCount++;
+          continue;
+        }
 
-          await t.commit();
-          touchedIds.push(existing.id);
-          updatedCount++;
-        } else {
-          console.log('IMPORT BASE -> criando nova AF:', entry.af);
+        console.log('IMPORT BASE -> criando nova AF:', entry.af);
 
-          const project = await InstallationProject.create(
-            {
-              status: 'A_INICIAR',
-              title: entry.clientName || `Implantação ${entry.af}`,
-              af: entry.af,
-              clientId: null,
+        const project = await InstallationProject.create(
+          {
+            status: 'A_INICIAR',
+            title: entry.clientName || `Implantação ${entry.af}`,
+            af: entry.af,
+            clientId: null,
 
-              saleDate: entry.saleDate || null,
+            saleDate: entry.saleDate || null,
 
-              contactName: null,
-              contactEmail: 'sem-email@base.local',
-              contactEmails: ['sem-email@base.local'],
-              contactPhone: null,
+            contactName: null,
+            contactEmail: 'sem-email@base.local',
+            contactEmails: ['sem-email@base.local'],
+            contactPhone: null,
 
-              startPlannedAt: null,
-              endPlannedAt: null,
-              startAt: null,
-              endAt: null,
+            startPlannedAt: null,
+            endPlannedAt: null,
+            startAt: null,
+            endAt: null,
 
-              trucksTotal: entry.totalEquip || 1,
-              trucksDone: 0,
-              equipmentsTotal: entry.totalEquip || 0,
-              equipmentsPerDay: 1,
-              daysEstimated: null,
+            trucksTotal: entry.totalEquip || 1,
+            trucksDone: 0,
+            equipmentsTotal: entry.totalEquip || 0,
+            equipmentsPerDay: 1,
+            daysEstimated: null,
 
-              dailyGoal: null,
-              weeklyGoal: null,
+            dailyGoal: null,
+            weeklyGoal: null,
 
-              whatsappGroupName: null,
-              whatsappGroupLink: null,
-              notes: null,
+            whatsappGroupName: null,
+            whatsappGroupLink: null,
+            notes: null,
 
-              supervisorId: null,
-              coordinatorId: null,
-              technicianId: null,
-              technicianIds: [],
+            supervisorId: null,
+            coordinatorId: null,
+            technicianId: null,
+            technicianIds: [],
 
-              recordType: 'BASE',
-              importBatch: batch,
+            recordType: 'BASE',
+            importBatch: batch,
 
-              createdById: req.user.id,
-              updatedById: req.user.id,
-            },
+            createdById: req.user.id,
+            updatedById: req.user.id,
+          },
+          { transaction: t }
+        );
+
+        if (entry.items.length) {
+          await InstallationProjectItem.bulkCreate(
+            entry.items.map((item) => ({
+              projectId: project.id,
+              equipmentName: item.equipmentName,
+              equipmentCode: item.equipmentCode,
+              qty: item.qty,
+            })),
             { transaction: t }
           );
-
-          if (entry.items.length) {
-            await InstallationProjectItem.bulkCreate(
-              entry.items.map((item) => ({
-                projectId: project.id,
-                equipmentName: item.equipmentName,
-                equipmentCode: item.equipmentCode,
-                qty: item.qty,
-              })),
-              { transaction: t }
-            );
-          }
-
-          await t.commit();
-          touchedIds.push(project.id);
-          importedCount++;
         }
+
+        await t.commit();
+        touchedIds.push(project.id);
+        importedCount++;
       } catch (err) {
         console.error('IMPORT BASE -> erro na AF:', entry.af, err);
 
@@ -1655,27 +1649,41 @@ async importBaseExcel(req, res) {
       }
     }
 
-    const rows = touchedIds.length
-      ? await InstallationProject.findAll({
-          where: { id: { [Op.in]: touchedIds } },
-          include: [
-            { model: InstallationProjectItem, as: 'items', required: false },
-            { model: Client, as: 'client', attributes: ['id', 'name'], required: false },
-          ],
-          order: [['id', 'DESC']],
-        })
-      : [];
+  const rows = touchedIds.length
+  ? await InstallationProject.findAll({
+      where: { id: { [Op.in]: touchedIds } },
+      include: [
+        { model: InstallationProjectItem, as: 'items', required: false },
+        { model: Client, as: 'client', attributes: ['id', 'name'], required: false },
+      ],
+      order: [['id', 'DESC']],
+    })
+  : [];
 
-    return ok(res, {
-      batch,
-      importedCount,
-      updatedCount,
-      totalProcessed: entries.length,
-      successCount: importedCount + updatedCount,
-      errorCount: errors.length,
-      errors,
-      rows,
-    });
+      const uploadedAt = new Date().toISOString();
+
+      return ok(res, {
+        batch,
+        uploadedAt,
+        importedCount,
+        skippedCount,
+        totalProcessed: entries.length,
+        successCount: importedCount,
+        errorCount: errors.length,
+        errors,
+        skipped,
+        lastImportedAf: rows?.[0]?.af || null,
+        rows: rows.map((row) => ({
+          id: row.id,
+          af: row.af,
+          title: row.title,
+          saleDate: row.saleDate,
+          importBatch: row.importBatch,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          items: row.items || [],
+        })),
+      });
   } catch (err) {
     console.error('IMPORT BASE -> erro fatal:', err);
     return bad(res, err.message || 'Falha ao importar Excel');
