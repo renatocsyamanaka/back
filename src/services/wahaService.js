@@ -159,11 +159,16 @@ function normalizeChatId(phoneOrChatId) {
 
   if (!value) return '';
 
-  if (value.includes('@c.us') || value.includes('@g.us')) {
+  if (
+    value.includes('@c.us') ||
+    value.includes('@g.us') ||
+    value.includes('@lid') ||
+    value.includes('@s.whatsapp.net')
+  ) {
     return value;
   }
 
-  const digits = normalizePhone(value);
+  const digits = String(value).replace(/\D/g, '');
   return digits ? `${digits}@c.us` : '';
 }
 

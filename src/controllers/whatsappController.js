@@ -150,8 +150,12 @@ async function detail(req, res) {
   }
 }
 
-async function sendMessageAndSave({ conversation, phone, text }) {
-  const result = await waha.sendText(phone, text);
+async function sendMessageAndSave({ conversation, text }) {
+  const target =
+    safeString(conversation.providerChatId) ||
+    safeString(conversation.phone);
+
+  const result = await waha.sendText(target, text);
 
   await WhatsappMessage.create({
     conversationId: conversation.id,
@@ -285,19 +289,18 @@ function formatBotDeliveryMessage(result) {
   );
 }
 
-async function runBotFlow({ conversation, phone, text }) {
-  const step = getCurrentStep(phone);
+async function runBotFlow({ conversation, text }) {
+  const step = getCurrentStep(conversation.phone);
   const normalized = normalizeText(text);
 
   if (step === 'INIT') {
     if (isGreeting(normalized) || normalized) {
       await sendMessageAndSave({
         conversation,
-        phone,
         text: 'Olá! Deseja rastrear um pedido? Responda Sim ou Não.',
       });
 
-      setCurrentStep(phone, 'ASK_TRACKING');
+      setCurrentStep(conversation.phone, 'ASK_TRACKING');
       return;
     }
   }
@@ -306,28 +309,25 @@ async function runBotFlow({ conversation, phone, text }) {
     if (isYes(normalized)) {
       await sendMessageAndSave({
         conversation,
-        phone,
         text: 'Perfeito. Digite o número da nota fiscal.',
       });
 
-      setCurrentStep(phone, 'ASK_NOTE');
+      setCurrentStep(conversation.phone, 'ASK_NOTE');
       return;
     }
 
     if (isNo(normalized)) {
       await sendMessageAndSave({
         conversation,
-        phone,
         text: 'Tudo bem. Quando precisar, é só me chamar novamente.',
       });
 
-      clearCurrentStep(phone);
+      clearCurrentStep(conversation.phone);
       return;
     }
 
     await sendMessageAndSave({
       conversation,
-      phone,
       text: 'Não entendi. Responda apenas Sim ou Não.',
     });
 
@@ -340,7 +340,6 @@ async function runBotFlow({ conversation, phone, text }) {
     if (!noteNumber) {
       await sendMessageAndSave({
         conversation,
-        phone,
         text: 'Por favor, envie apenas o número da nota fiscal.',
       });
       return;
@@ -351,20 +350,17 @@ async function runBotFlow({ conversation, phone, text }) {
     if (!result) {
       await sendMessageAndSave({
         conversation,
-        phone,
-        text:
-          'Não localizei essa nota no momento. Verifique o número enviado e tente novamente.',
+        text: 'Não localizei essa nota no momento. Verifique o número enviado e tente novamente.',
       });
       return;
     }
 
     await sendMessageAndSave({
       conversation,
-      phone,
       text: formatBotDeliveryMessage(result),
     });
 
-    setCurrentStep(phone, 'ASK_ANOTHER_NOTE');
+    setCurrentStep(conversation.phone, 'ASK_ANOTHER_NOTE');
     return;
   }
 
@@ -372,28 +368,25 @@ async function runBotFlow({ conversation, phone, text }) {
     if (isYes(normalized)) {
       await sendMessageAndSave({
         conversation,
-        phone,
         text: 'Perfeito. Digite o número da próxima nota fiscal.',
       });
 
-      setCurrentStep(phone, 'ASK_NOTE');
+      setCurrentStep(conversation.phone, 'ASK_NOTE');
       return;
     }
 
     if (isNo(normalized)) {
       await sendMessageAndSave({
         conversation,
-        phone,
         text: 'Atendimento encerrado. Quando quiser, posso ajudar novamente.',
       });
 
-      clearCurrentStep(phone);
+      clearCurrentStep(conversation.phone);
       return;
     }
 
     await sendMessageAndSave({
       conversation,
-      phone,
       text: 'Responda Sim para consultar outra nota ou Não para encerrar.',
     });
   }
@@ -430,12 +423,16 @@ async function webhook(req, res) {
       });
     }
 
-    if (parsed.event && parsed.event !== 'message') {
-      return res.status(200).json({
+    if (
+    parsed.event &&
+    parsed.event !== 'message' &&
+    parsed.event !== 'message.any'
+    ) {
+    return res.status(200).json({
         ok: true,
         ignored: true,
         reason: 'unsupported_event',
-      });
+    });
     }
 
     let conversation = await WhatsappConversation.findOne({
@@ -444,23 +441,25 @@ async function webhook(req, res) {
 
     const interactionDate = new Date(parsed.timestamp * 1000);
 
-    if (!conversation) {
-      conversation = await WhatsappConversation.create({
-        phone,
-        contactName: phone,
-        status: 'OPEN',
-        lastMessage: text,
-        messagesCount: 0,
-        provider: 'waha',
-        lastInteractionAt: interactionDate,
-      });
-    } else {
-      await conversation.update({
-        lastMessage: text,
-        status: 'OPEN',
-        lastInteractionAt: interactionDate,
-      });
-    }
+        if (!conversation) {
+        conversation = await WhatsappConversation.create({
+            phone,
+            providerChatId: parsed.from,
+            contactName: phone,
+            status: 'OPEN',
+            lastMessage: text,
+            messagesCount: 0,
+            provider: 'waha',
+            lastInteractionAt: interactionDate,
+        });
+        } else {
+        await conversation.update({
+            providerChatId: parsed.from,
+            lastMessage: text,
+            status: 'OPEN',
+            lastInteractionAt: interactionDate,
+        });
+        }
 
     let alreadyExists = null;
 
@@ -481,13 +480,28 @@ async function webhook(req, res) {
       });
     }
 
+    try {
     await WhatsappMessage.create({
-      conversationId: conversation.id,
-      direction: 'in',
-      providerMessageId: parsed.messageId,
-      text,
-      rawPayload: parsed.raw,
+        conversationId: conversation.id,
+        direction: 'in',
+        providerMessageId: parsed.messageId,
+        text,
+        rawPayload: parsed.raw,
     });
+    } catch (error) {
+    if (
+        error?.name === 'SequelizeUniqueConstraintError' ||
+        error?.parent?.code === 'ER_DUP_ENTRY'
+    ) {
+        return res.status(200).json({
+        ok: true,
+        conversationId: conversation.id,
+        duplicated: true,
+        });
+    }
+
+    throw error;
+    }
 
     const totalMessages = await WhatsappMessage.count({
       where: { conversationId: conversation.id },
@@ -500,9 +514,8 @@ async function webhook(req, res) {
     });
 
     await runBotFlow({
-      conversation,
-      phone,
-      text,
+    conversation,
+    text,
     });
 
     return res.status(200).json({
@@ -543,12 +556,9 @@ async function send(req, res) {
       });
     }
 
-    const phone = normalizePhone(conversation.phone);
-
     const result = await sendMessageAndSave({
-      conversation,
-      phone,
-      text,
+    conversation,
+    text,
     });
 
     return res.json({
