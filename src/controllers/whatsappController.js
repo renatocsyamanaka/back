@@ -2,10 +2,6 @@ const { Op } = require('sequelize');
 const { WhatsappConversation, WhatsappMessage, sequelize } = require('../models');
 const waha = require('../services/wahaService');
 
-// Memória simples do fluxo.
-// Depois, se quiser, a gente migra isso para banco.
-const conversationSteps = new Map();
-
 function normalizePhone(value) {
   return String(value || '')
     .replace(/@c\.us$/i, '')
@@ -96,6 +92,18 @@ function extractIncomingMessage(body) {
     timestamp: Number(timestamp) || Math.floor(Date.now() / 1000),
     raw: body,
   };
+}
+
+function getCurrentStep(conversation) {
+  return safeString(conversation?.currentStepCode) || 'INIT';
+}
+
+async function setCurrentStep(conversation, step) {
+  await conversation.update({ currentStepCode: step });
+}
+
+async function clearCurrentStep(conversation) {
+  await conversation.update({ currentStepCode: 'INIT' });
 }
 
 async function list(req, res) {
@@ -190,18 +198,6 @@ async function sendMessageAndSave({ conversation, text }) {
   return result;
 }
 
-function getCurrentStep(phone) {
-  return conversationSteps.get(phone) || 'INIT';
-}
-
-function setCurrentStep(phone, step) {
-  conversationSteps.set(phone, step);
-}
-
-function clearCurrentStep(phone) {
-  conversationSteps.delete(phone);
-}
-
 async function findDeliveryByInvoice(noteNumber) {
   const normalized = safeString(noteNumber);
 
@@ -209,6 +205,7 @@ async function findDeliveryByInvoice(noteNumber) {
 
   const DeliveryReport =
     sequelize?.models?.DeliveryReport ||
+    sequelize?.models?.delivery_reports ||
     null;
 
   if (DeliveryReport) {
@@ -281,19 +278,27 @@ function formatBotDeliveryMessage(result) {
 }
 
 async function runBotFlow({ conversation, text }) {
-  const step = getCurrentStep(conversation.phone);
+  const step = getCurrentStep(conversation);
   const normalized = normalizeText(text);
 
-  if (step === 'INIT') {
-    if (isGreeting(normalized) || normalized) {
+  if (step === 'INIT' || step === 'GREETING') {
+    if (isGreeting(normalized)) {
       await sendMessageAndSave({
         conversation,
         text: 'Olá! Deseja rastrear um pedido? Responda Sim ou Não.',
       });
 
-      setCurrentStep(conversation.phone, 'ASK_TRACKING');
+      await setCurrentStep(conversation, 'ASK_TRACKING');
       return;
     }
+
+    await sendMessageAndSave({
+      conversation,
+      text: 'Olá! Deseja rastrear um pedido? Responda Sim ou Não.',
+    });
+
+    await setCurrentStep(conversation, 'ASK_TRACKING');
+    return;
   }
 
   if (step === 'ASK_TRACKING') {
@@ -303,7 +308,7 @@ async function runBotFlow({ conversation, text }) {
         text: 'Perfeito. Digite o número da nota fiscal.',
       });
 
-      setCurrentStep(conversation.phone, 'ASK_NOTE');
+      await setCurrentStep(conversation, 'ASK_NOTE');
       return;
     }
 
@@ -313,7 +318,7 @@ async function runBotFlow({ conversation, text }) {
         text: 'Tudo bem. Quando precisar, é só me chamar novamente.',
       });
 
-      clearCurrentStep(conversation.phone);
+      await clearCurrentStep(conversation);
       return;
     }
 
@@ -321,7 +326,6 @@ async function runBotFlow({ conversation, text }) {
       conversation,
       text: 'Não entendi. Responda apenas Sim ou Não.',
     });
-
     return;
   }
 
@@ -346,12 +350,17 @@ async function runBotFlow({ conversation, text }) {
       return;
     }
 
+    await conversation.update({
+      lastNoteNumber: noteNumber,
+      lastCte: result?.cte || null,
+    });
+
     await sendMessageAndSave({
       conversation,
       text: formatBotDeliveryMessage(result),
     });
 
-    setCurrentStep(conversation.phone, 'ASK_ANOTHER_NOTE');
+    await setCurrentStep(conversation, 'ASK_ANOTHER_NOTE');
     return;
   }
 
@@ -362,7 +371,7 @@ async function runBotFlow({ conversation, text }) {
         text: 'Perfeito. Digite o número da próxima nota fiscal.',
       });
 
-      setCurrentStep(conversation.phone, 'ASK_NOTE');
+      await setCurrentStep(conversation, 'ASK_NOTE');
       return;
     }
 
@@ -372,7 +381,7 @@ async function runBotFlow({ conversation, text }) {
         text: 'Atendimento encerrado. Quando quiser, posso ajudar novamente.',
       });
 
-      clearCurrentStep(conversation.phone);
+      await clearCurrentStep(conversation);
       return;
     }
 
@@ -380,7 +389,17 @@ async function runBotFlow({ conversation, text }) {
       conversation,
       text: 'Responda Sim para consultar outra nota ou Não para encerrar.',
     });
+    return;
   }
+
+  await conversation.update({ currentStepCode: 'INIT' });
+
+  await sendMessageAndSave({
+    conversation,
+    text: 'Olá! Deseja rastrear um pedido? Responda Sim ou Não.',
+  });
+
+  await setCurrentStep(conversation, 'ASK_TRACKING');
 }
 
 async function webhook(req, res) {
@@ -414,16 +433,12 @@ async function webhook(req, res) {
       });
     }
 
-    if (
-    parsed.event &&
-    parsed.event !== 'message' &&
-    parsed.event !== 'message.any'
-    ) {
-    return res.status(200).json({
+    if (parsed.event && parsed.event !== 'message') {
+      return res.status(200).json({
         ok: true,
         ignored: true,
         reason: 'unsupported_event',
-    });
+      });
     }
 
     let conversation = await WhatsappConversation.findOne({
@@ -433,72 +448,57 @@ async function webhook(req, res) {
     const interactionDate = new Date(parsed.timestamp * 1000);
 
     if (!conversation) {
-    conversation = await WhatsappConversation.create({
+      conversation = await WhatsappConversation.create({
         phone,
         providerChatId: parsed.from,
         contactName: phone,
         status: 'OPEN',
+        provider: 'waha',
         lastMessage: text,
         messagesCount: 0,
-        provider: 'waha',
         lastUserMessageAt: interactionDate,
         lastInteractionAt: interactionDate,
-    });
+        currentFlowCode: 'DEFAULT_TRACKING',
+        currentStepCode: 'INIT',
+      });
     } else {
-    await conversation.update({
+      await conversation.update({
         providerChatId: parsed.from,
         lastMessage: text,
         status: 'OPEN',
         lastUserMessageAt: interactionDate,
         lastInteractionAt: interactionDate,
-    });
+      });
 
-    await conversation.reload();
+      await conversation.reload();
     }
 
-    let alreadyExists = null;
-
     if (parsed.messageId) {
-      alreadyExists = await WhatsappMessage.findOne({
+      const alreadyExists = await WhatsappMessage.findOne({
         where: {
           conversationId: conversation.id,
           providerMessageId: parsed.messageId,
         },
       });
-    }
 
-    if (alreadyExists) {
-      return res.status(200).json({
-        ok: true,
-        conversationId: conversation.id,
-        duplicated: true,
-      });
-    }
-
-    try {
-        await WhatsappMessage.create({
-        conversationId: conversation.id,
-        direction: 'IN',
-        senderType: 'USER',
-        messageType: 'TEXT',
-        providerMessageId: parsed.messageId,
-        text,
-        rawPayload: parsed.raw,
-        });
-    } catch (error) {
-    if (
-        error?.name === 'SequelizeUniqueConstraintError' ||
-        error?.parent?.code === 'ER_DUP_ENTRY'
-    ) {
+      if (alreadyExists) {
         return res.status(200).json({
-        ok: true,
-        conversationId: conversation.id,
-        duplicated: true,
+          ok: true,
+          conversationId: conversation.id,
+          duplicated: true,
         });
+      }
     }
 
-    throw error;
-    }
+    await WhatsappMessage.create({
+      conversationId: conversation.id,
+      direction: 'IN',
+      senderType: 'USER',
+      messageType: 'TEXT',
+      providerMessageId: parsed.messageId,
+      text,
+      rawPayload: parsed.raw,
+    });
 
     const totalMessages = await WhatsappMessage.count({
       where: { conversationId: conversation.id },
@@ -507,12 +507,15 @@ async function webhook(req, res) {
     await conversation.update({
       messagesCount: totalMessages,
       lastMessage: text,
+      lastUserMessageAt: interactionDate,
       lastInteractionAt: interactionDate,
     });
 
+    await conversation.reload();
+
     await runBotFlow({
-    conversation,
-    text,
+      conversation,
+      text,
     });
 
     return res.status(200).json({
@@ -554,8 +557,8 @@ async function send(req, res) {
     }
 
     const result = await sendMessageAndSave({
-    conversation,
-    text,
+      conversation,
+      text,
     });
 
     return res.json({
