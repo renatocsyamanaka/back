@@ -171,20 +171,20 @@ async function webhook(req, res) {
     if (parsed.messageId) {
       alreadyExists = await WhatsappMessage.findOne({
         where: {
-          conversationId: conversation.id,
-          messageId: parsed.messageId,
+        conversationId: conversation.id,
+        providerMessageId: parsed.messageId,
         },
       });
     }
 
     if (!alreadyExists) {
-      await WhatsappMessage.create({
+        await WhatsappMessage.create({
         conversationId: conversation.id,
         direction: 'in',
-        messageId: parsed.messageId,
-        content: text,
+        providerMessageId: parsed.messageId,
+        text: text,
         rawPayload: parsed.raw,
-      });
+        });
     }
 
     const totalMessages = await WhatsappMessage.count({
