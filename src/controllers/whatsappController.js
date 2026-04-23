@@ -50,31 +50,37 @@ function isBroadcastChat(chatId) {
   const value = safeString(chatId);
   return value.includes('status@broadcast') || value.includes('@broadcast');
 }
+
+function normalizeMessageId(rawValue) {
+  if (rawValue == null) return null;
+  if (typeof rawValue === 'string') return rawValue;
+  if (typeof rawValue === 'number') return String(rawValue);
+
+  if (typeof rawValue === 'object') {
+    if (typeof rawValue._serialized === 'string') return rawValue._serialized;
+    if (typeof rawValue.id === 'string') return rawValue.id;
+    if (typeof rawValue.id === 'number') return String(rawValue.id);
+
+    try {
+      return JSON.stringify(rawValue);
+    } catch (error) {
+      return String(rawValue);
+    }
+  }
+
+  return String(rawValue);
+}
+
 function extractProviderMessageId(payload) {
   const candidate =
     payload?.id ??
     payload?.messageId ??
     payload?.key?.id ??
     payload?.message?.id ??
+    payload?._data?.id ??
     null;
 
-  if (candidate == null) return null;
-
-  if (typeof candidate === 'string') return candidate;
-  if (typeof candidate === 'number') return String(candidate);
-
-  if (typeof candidate === 'object') {
-    if (typeof candidate._serialized === 'string') return candidate._serialized;
-    if (typeof candidate.id === 'string') return candidate.id;
-
-    try {
-      return JSON.stringify(candidate);
-    } catch {
-      return String(candidate);
-    }
-  }
-
-  return String(candidate);
+  return normalizeMessageId(candidate);
 }
 
 function extractIncomingMessage(body) {
@@ -98,25 +104,15 @@ function extractIncomingMessage(body) {
     payload?.caption ||
     '';
 
-const rawMessageId =
-  payload?.id ??
-  payload?.messageId ??
-  payload?._data?.id?._serialized ??
-  payload?._data?.id?.id ??
-  null;
+  const rawMessageId =
+    payload?.id ??
+    payload?.messageId ??
+    payload?._data?.id?._serialized ??
+    payload?._data?.id?.id ??
+    payload?._data?.id ??
+    null;
 
-const messageId =
-  rawMessageId == null
-    ? null
-    : typeof rawMessageId === 'string'
-      ? rawMessageId
-      : typeof rawMessageId === 'number'
-        ? String(rawMessageId)
-        : typeof rawMessageId === 'object' && rawMessageId._serialized
-          ? String(rawMessageId._serialized)
-          : typeof rawMessageId === 'object' && rawMessageId.id
-            ? String(rawMessageId.id)
-            : JSON.stringify(rawMessageId);
+  const messageId = normalizeMessageId(rawMessageId);
 
   const fromMe =
     payload?.fromMe === true ||
@@ -134,7 +130,7 @@ const messageId =
     event,
     from: safeString(from),
     text: safeString(text),
-    messageId: messageId ? String(messageId) : null,
+    messageId,
     fromMe,
     timestamp: Number(timestamp) || Math.floor(Date.now() / 1000),
     raw: body,
@@ -256,6 +252,7 @@ async function sendMessageAndSave({ conversation, text, senderType = 'BOT' }) {
 
   return result;
 }
+
 async function findDeliveryByInvoice(noteNumber) {
   const normalized = safeString(noteNumber);
 
@@ -339,7 +336,6 @@ async function runBotFlow({ conversation, text }) {
   const step = getCurrentStep(conversation);
   const normalized = normalizeText(text);
 
-  // Etapa inicial
   if (step === 'INIT' || step === 'GREETING') {
     await sendMessageAndSave({
       conversation,
@@ -350,7 +346,6 @@ async function runBotFlow({ conversation, text }) {
     return;
   }
 
-  // Aguarda Sim/Não
   if (step === 'ASK_TRACKING') {
     if (isYes(normalized)) {
       await sendMessageAndSave({
@@ -379,7 +374,6 @@ async function runBotFlow({ conversation, text }) {
     return;
   }
 
-  // Aguarda número da nota
   if (step === 'ASK_NOTE') {
     const noteNumber = safeString(text).replace(/\D/g, '');
 
@@ -418,7 +412,6 @@ async function runBotFlow({ conversation, text }) {
     return;
   }
 
-  // Pergunta se quer consultar outra
   if (step === 'ASK_ANOTHER_NOTE') {
     if (isYes(normalized)) {
       await sendMessageAndSave({
@@ -447,7 +440,6 @@ async function runBotFlow({ conversation, text }) {
     return;
   }
 
-  // fallback
   await clearCurrentStep(conversation);
 
   await sendMessageAndSave({
@@ -466,7 +458,6 @@ async function webhook(req, res) {
     const text = safeString(parsed.text);
     const interactionDate = new Date(parsed.timestamp * 1000);
 
-    // Ignora grupos
     if (isGroupChat(parsed.from)) {
       return res.status(200).json({
         ok: true,
@@ -475,7 +466,6 @@ async function webhook(req, res) {
       });
     }
 
-    // Ignora status/broadcast
     if (isBroadcastChat(parsed.from)) {
       return res.status(200).json({
         ok: true,
@@ -508,7 +498,6 @@ async function webhook(req, res) {
       });
     }
 
-    // Processa somente mensagem normal
     if (parsed.event && parsed.event !== 'message') {
       return res.status(200).json({
         ok: true,
@@ -547,7 +536,6 @@ async function webhook(req, res) {
       await conversation.reload();
     }
 
-    // Deduplicação por providerMessageId
     if (parsed.messageId) {
       const alreadyExists = await WhatsappMessage.findOne({
         where: {
