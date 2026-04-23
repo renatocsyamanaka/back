@@ -1,4 +1,3 @@
-const { Op } = require('sequelize');
 const { WhatsappConversation, WhatsappMessage, sequelize } = require('../models');
 const waha = require('../services/wahaService');
 
@@ -41,6 +40,15 @@ function isYes(text) {
 function isNo(text) {
   const value = normalizeText(text);
   return ['nao', 'não', 'n', 'no', 'sair', 'encerrar', 'cancelar'].includes(value);
+}
+
+function isGroupChat(chatId) {
+  return safeString(chatId).endsWith('@g.us');
+}
+
+function isBroadcastChat(chatId) {
+  const value = safeString(chatId);
+  return value.includes('status@broadcast') || value.includes('@broadcast');
 }
 
 function extractIncomingMessage(body) {
@@ -100,10 +108,24 @@ function getCurrentStep(conversation) {
 
 async function setCurrentStep(conversation, step) {
   await conversation.update({ currentStepCode: step });
+  conversation.currentStepCode = step;
 }
 
 async function clearCurrentStep(conversation) {
   await conversation.update({ currentStepCode: 'INIT' });
+  conversation.currentStepCode = 'INIT';
+}
+
+async function recalcConversationCounters(conversation) {
+  const totalMessages = await WhatsappMessage.count({
+    where: { conversationId: conversation.id },
+  });
+
+  await conversation.update({
+    messagesCount: totalMessages,
+  });
+
+  conversation.messagesCount = totalMessages;
 }
 
 async function list(req, res) {
@@ -158,7 +180,7 @@ async function detail(req, res) {
   }
 }
 
-async function sendMessageAndSave({ conversation, text }) {
+async function sendMessageAndSave({ conversation, text, senderType = 'BOT' }) {
   const chatId =
     safeString(conversation.providerChatId) ||
     safeString(conversation.phone);
@@ -167,12 +189,13 @@ async function sendMessageAndSave({ conversation, text }) {
     throw new Error('ChatId não encontrado na conversa');
   }
 
+  const now = new Date();
   const result = await waha.sendText(chatId, text);
 
   await WhatsappMessage.create({
     conversationId: conversation.id,
     direction: 'OUT',
-    senderType: 'BOT',
+    senderType,
     messageType: 'TEXT',
     providerMessageId:
       result?.id ||
@@ -181,19 +204,20 @@ async function sendMessageAndSave({ conversation, text }) {
       null,
     text,
     rawPayload: result || null,
-    sentAt: new Date(),
+    sentAt: now,
   });
 
-  const totalMessages = await WhatsappMessage.count({
-    where: { conversationId: conversation.id },
-  });
+  await recalcConversationCounters(conversation);
 
   await conversation.update({
     lastMessage: text,
-    messagesCount: totalMessages,
-    lastBotMessageAt: new Date(),
-    lastInteractionAt: new Date(),
+    lastBotMessageAt: now,
+    lastInteractionAt: now,
   });
+
+  conversation.lastMessage = text;
+  conversation.lastBotMessageAt = now;
+  conversation.lastInteractionAt = now;
 
   return result;
 }
@@ -281,17 +305,8 @@ async function runBotFlow({ conversation, text }) {
   const step = getCurrentStep(conversation);
   const normalized = normalizeText(text);
 
+  // Etapa inicial
   if (step === 'INIT' || step === 'GREETING') {
-    if (isGreeting(normalized)) {
-      await sendMessageAndSave({
-        conversation,
-        text: 'Olá! Deseja rastrear um pedido? Responda Sim ou Não.',
-      });
-
-      await setCurrentStep(conversation, 'ASK_TRACKING');
-      return;
-    }
-
     await sendMessageAndSave({
       conversation,
       text: 'Olá! Deseja rastrear um pedido? Responda Sim ou Não.',
@@ -301,6 +316,7 @@ async function runBotFlow({ conversation, text }) {
     return;
   }
 
+  // Aguarda Sim/Não
   if (step === 'ASK_TRACKING') {
     if (isYes(normalized)) {
       await sendMessageAndSave({
@@ -329,6 +345,7 @@ async function runBotFlow({ conversation, text }) {
     return;
   }
 
+  // Aguarda número da nota
   if (step === 'ASK_NOTE') {
     const noteNumber = safeString(text).replace(/\D/g, '');
 
@@ -355,6 +372,9 @@ async function runBotFlow({ conversation, text }) {
       lastCte: result?.cte || null,
     });
 
+    conversation.lastNoteNumber = noteNumber;
+    conversation.lastCte = result?.cte || null;
+
     await sendMessageAndSave({
       conversation,
       text: formatBotDeliveryMessage(result),
@@ -364,6 +384,7 @@ async function runBotFlow({ conversation, text }) {
     return;
   }
 
+  // Pergunta se quer consultar outra
   if (step === 'ASK_ANOTHER_NOTE') {
     if (isYes(normalized)) {
       await sendMessageAndSave({
@@ -392,7 +413,8 @@ async function runBotFlow({ conversation, text }) {
     return;
   }
 
-  await conversation.update({ currentStepCode: 'INIT' });
+  // fallback
+  await clearCurrentStep(conversation);
 
   await sendMessageAndSave({
     conversation,
@@ -408,6 +430,25 @@ async function webhook(req, res) {
 
     const phone = normalizePhone(parsed.from);
     const text = safeString(parsed.text);
+    const interactionDate = new Date(parsed.timestamp * 1000);
+
+    // Ignora grupos
+    if (isGroupChat(parsed.from)) {
+      return res.status(200).json({
+        ok: true,
+        ignored: true,
+        reason: 'group_message',
+      });
+    }
+
+    // Ignora status/broadcast
+    if (isBroadcastChat(parsed.from)) {
+      return res.status(200).json({
+        ok: true,
+        ignored: true,
+        reason: 'broadcast_message',
+      });
+    }
 
     if (!phone) {
       return res.status(200).json({
@@ -433,6 +474,7 @@ async function webhook(req, res) {
       });
     }
 
+    // Processa somente mensagem normal
     if (parsed.event && parsed.event !== 'message') {
       return res.status(200).json({
         ok: true,
@@ -444,8 +486,6 @@ async function webhook(req, res) {
     let conversation = await WhatsappConversation.findOne({
       where: { phone },
     });
-
-    const interactionDate = new Date(parsed.timestamp * 1000);
 
     if (!conversation) {
       conversation = await WhatsappConversation.create({
@@ -473,6 +513,7 @@ async function webhook(req, res) {
       await conversation.reload();
     }
 
+    // Deduplicação por providerMessageId
     if (parsed.messageId) {
       const alreadyExists = await WhatsappMessage.findOne({
         where: {
@@ -500,12 +541,9 @@ async function webhook(req, res) {
       rawPayload: parsed.raw,
     });
 
-    const totalMessages = await WhatsappMessage.count({
-      where: { conversationId: conversation.id },
-    });
+    await recalcConversationCounters(conversation);
 
     await conversation.update({
-      messagesCount: totalMessages,
       lastMessage: text,
       lastUserMessageAt: interactionDate,
       lastInteractionAt: interactionDate,
@@ -518,10 +556,13 @@ async function webhook(req, res) {
       text,
     });
 
+    await conversation.reload();
+
     return res.status(200).json({
       ok: true,
       conversationId: conversation.id,
       duplicated: false,
+      currentStepCode: conversation.currentStepCode,
     });
   } catch (error) {
     console.error('WHATSAPP WEBHOOK ERROR:', error);
@@ -556,14 +597,24 @@ async function send(req, res) {
       });
     }
 
+    if (isGroupChat(conversation.providerChatId)) {
+      return res.status(400).json({
+        error: 'Envio para grupos não é permitido.',
+      });
+    }
+
     const result = await sendMessageAndSave({
       conversation,
       text,
+      senderType: 'HUMAN',
     });
+
+    await conversation.reload();
 
     return res.json({
       ok: true,
       result,
+      conversation,
     });
   } catch (error) {
     console.error('WHATSAPP SEND ERROR:', error);

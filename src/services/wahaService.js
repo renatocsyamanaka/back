@@ -163,7 +163,7 @@ function normalizeChatId(phoneOrChatId) {
     return value;
   }
 
-  const digits = String(value).replace(/\D/g, '');
+  const digits = value.replace(/\D/g, '');
   return digits ? `${digits}@c.us` : '';
 }
 
