@@ -50,6 +50,32 @@ function isBroadcastChat(chatId) {
   const value = safeString(chatId);
   return value.includes('status@broadcast') || value.includes('@broadcast');
 }
+function extractProviderMessageId(payload) {
+  const candidate =
+    payload?.id ??
+    payload?.messageId ??
+    payload?.key?.id ??
+    payload?.message?.id ??
+    null;
+
+  if (candidate == null) return null;
+
+  if (typeof candidate === 'string') return candidate;
+  if (typeof candidate === 'number') return String(candidate);
+
+  if (typeof candidate === 'object') {
+    if (typeof candidate._serialized === 'string') return candidate._serialized;
+    if (typeof candidate.id === 'string') return candidate.id;
+
+    try {
+      return JSON.stringify(candidate);
+    } catch {
+      return String(candidate);
+    }
+  }
+
+  return String(candidate);
+}
 
 function extractIncomingMessage(body) {
   const payload = body?.payload || body?.data || body?.message || body || {};
@@ -72,12 +98,25 @@ function extractIncomingMessage(body) {
     payload?.caption ||
     '';
 
-  const messageId =
-    payload?.id ||
-    payload?.messageId ||
-    payload?._data?.id?._serialized ||
-    payload?._data?.id?.id ||
-    null;
+const rawMessageId =
+  payload?.id ??
+  payload?.messageId ??
+  payload?._data?.id?._serialized ??
+  payload?._data?.id?.id ??
+  null;
+
+const messageId =
+  rawMessageId == null
+    ? null
+    : typeof rawMessageId === 'string'
+      ? rawMessageId
+      : typeof rawMessageId === 'number'
+        ? String(rawMessageId)
+        : typeof rawMessageId === 'object' && rawMessageId._serialized
+          ? String(rawMessageId._serialized)
+          : typeof rawMessageId === 'object' && rawMessageId.id
+            ? String(rawMessageId.id)
+            : JSON.stringify(rawMessageId);
 
   const fromMe =
     payload?.fromMe === true ||
@@ -197,11 +236,7 @@ async function sendMessageAndSave({ conversation, text, senderType = 'BOT' }) {
     direction: 'OUT',
     senderType,
     messageType: 'TEXT',
-    providerMessageId:
-      result?.id ||
-      result?.messageId ||
-      result?.key?.id ||
-      null,
+    providerMessageId: extractProviderMessageId(result),
     text,
     rawPayload: result || null,
     sentAt: now,
@@ -221,7 +256,6 @@ async function sendMessageAndSave({ conversation, text, senderType = 'BOT' }) {
 
   return result;
 }
-
 async function findDeliveryByInvoice(noteNumber) {
   const normalized = safeString(noteNumber);
 

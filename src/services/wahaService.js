@@ -153,6 +153,32 @@ function normalizePhone(phone) {
   const digits = String(phone || '').replace(/\D/g, '');
   return digits;
 }
+function extractProviderMessageId(payload) {
+  const candidate =
+    payload?.id ??
+    payload?.messageId ??
+    payload?.key?.id ??
+    payload?.message?.id ??
+    null;
+
+  if (candidate == null) return null;
+
+  if (typeof candidate === 'string') return candidate;
+  if (typeof candidate === 'number') return String(candidate);
+
+  if (typeof candidate === 'object') {
+    if (typeof candidate._serialized === 'string') return candidate._serialized;
+    if (typeof candidate.id === 'string') return candidate.id;
+
+    try {
+      return JSON.stringify(candidate);
+    } catch {
+      return String(candidate);
+    }
+  }
+
+  return String(candidate);
+}
 
 function normalizeChatId(phoneOrChatId) {
   const value = String(phoneOrChatId || '').trim();
