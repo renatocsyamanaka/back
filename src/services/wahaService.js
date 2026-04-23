@@ -159,12 +159,7 @@ function normalizeChatId(phoneOrChatId) {
 
   if (!value) return '';
 
-  if (
-    value.includes('@c.us') ||
-    value.includes('@g.us') ||
-    value.includes('@lid') ||
-    value.includes('@s.whatsapp.net')
-  ) {
+  if (value.includes('@')) {
     return value;
   }
 

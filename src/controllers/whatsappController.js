@@ -151,15 +151,21 @@ async function detail(req, res) {
 }
 
 async function sendMessageAndSave({ conversation, text }) {
-  const target =
+  const chatId =
     safeString(conversation.providerChatId) ||
     safeString(conversation.phone);
 
-  const result = await waha.sendText(target, text);
+  if (!chatId) {
+    throw new Error('ChatId não encontrado na conversa');
+  }
+
+  const result = await waha.sendText(chatId, text);
 
   await WhatsappMessage.create({
     conversationId: conversation.id,
-    direction: 'out',
+    direction: 'OUT',
+    senderType: 'BOT',
+    messageType: 'TEXT',
     providerMessageId:
       result?.id ||
       result?.messageId ||
@@ -167,6 +173,7 @@ async function sendMessageAndSave({ conversation, text }) {
       null,
     text,
     rawPayload: result || null,
+    sentAt: new Date(),
   });
 
   const totalMessages = await WhatsappMessage.count({
@@ -176,6 +183,7 @@ async function sendMessageAndSave({ conversation, text }) {
   await conversation.update({
     lastMessage: text,
     messagesCount: totalMessages,
+    lastBotMessageAt: new Date(),
     lastInteractionAt: new Date(),
   });
 
@@ -424,25 +432,29 @@ async function webhook(req, res) {
 
     const interactionDate = new Date(parsed.timestamp * 1000);
 
-        if (!conversation) {
-        conversation = await WhatsappConversation.create({
-            phone,
-            providerChatId: parsed.from,
-            contactName: phone,
-            status: 'OPEN',
-            lastMessage: text,
-            messagesCount: 0,
-            provider: 'waha',
-            lastInteractionAt: interactionDate,
-        });
-        } else {
-        await conversation.update({
-            providerChatId: parsed.from,
-            lastMessage: text,
-            status: 'OPEN',
-            lastInteractionAt: interactionDate,
-        });
-        }
+    if (!conversation) {
+    conversation = await WhatsappConversation.create({
+        phone,
+        providerChatId: parsed.from,
+        contactName: phone,
+        status: 'OPEN',
+        lastMessage: text,
+        messagesCount: 0,
+        provider: 'waha',
+        lastUserMessageAt: interactionDate,
+        lastInteractionAt: interactionDate,
+    });
+    } else {
+    await conversation.update({
+        providerChatId: parsed.from,
+        lastMessage: text,
+        status: 'OPEN',
+        lastUserMessageAt: interactionDate,
+        lastInteractionAt: interactionDate,
+    });
+
+    await conversation.reload();
+    }
 
     let alreadyExists = null;
 
@@ -464,13 +476,15 @@ async function webhook(req, res) {
     }
 
     try {
-    await WhatsappMessage.create({
+        await WhatsappMessage.create({
         conversationId: conversation.id,
-        direction: 'in',
+        direction: 'IN',
+        senderType: 'USER',
+        messageType: 'TEXT',
         providerMessageId: parsed.messageId,
         text,
         rawPayload: parsed.raw,
-    });
+        });
     } catch (error) {
     if (
         error?.name === 'SequelizeUniqueConstraintError' ||

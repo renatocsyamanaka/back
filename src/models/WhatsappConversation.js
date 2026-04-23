@@ -14,6 +14,10 @@ WhatsappConversation.init(
       type: DataTypes.STRING(30),
       allowNull: false,
     },
+    providerChatId: {
+      type: DataTypes.STRING(150),
+      allowNull: true,
+    },
     contactName: {
       type: DataTypes.STRING(150),
       allowNull: true,
@@ -54,6 +58,15 @@ WhatsappConversation.init(
     protocol: {
       type: DataTypes.STRING(80),
       allowNull: true,
+    },
+    lastMessage: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    messagesCount: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
     },
     lastUserMessageAt: {
       type: DataTypes.DATE,
@@ -99,6 +112,7 @@ WhatsappConversation.init(
     timestamps: true,
     indexes: [
       { fields: ['phone'] },
+      { fields: ['providerChatId'] },
       { fields: ['status'] },
       { fields: ['currentFlowCode'] },
       { fields: ['currentStepCode'] },
