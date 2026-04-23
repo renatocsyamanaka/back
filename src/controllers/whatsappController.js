@@ -4,6 +4,7 @@ function normalizePhone(value) {
   return String(value || '')
     .replace(/@c\.us$/i, '')
     .replace(/@s\.whatsapp\.net$/i, '')
+    .replace(/@lid$/i, '')
     .replace(/\D/g, '');
 }
 
@@ -12,12 +13,11 @@ function safeString(value) {
 }
 
 function extractIncomingMessage(body) {
-  const event = body?.event || body?.type || '';
-
   const payload = body?.payload || body?.data || body || {};
 
   const from =
     payload?.from ||
+    payload?._data?.from?._serialized ||
     payload?.chatId ||
     payload?.author ||
     payload?.participant ||
@@ -25,6 +25,7 @@ function extractIncomingMessage(body) {
 
   const text =
     payload?.body ||
+    payload?._data?.body ||
     payload?.text ||
     payload?.message ||
     payload?.content ||
@@ -34,20 +35,26 @@ function extractIncomingMessage(body) {
   const messageId =
     payload?.id ||
     payload?.messageId ||
-    payload?.key?.id ||
+    payload?._data?.id?._serialized ||
+    payload?._data?.id?.id ||
     null;
 
   const fromMe =
     payload?.fromMe === true ||
     payload?.from_me === true ||
-    payload?.key?.fromMe === true;
+    payload?._data?.id?.fromMe === true;
+
+  const timestamp =
+    payload?.timestamp ||
+    payload?._data?.t ||
+    Math.floor(Date.now() / 1000);
 
   return {
-    event: safeString(event),
     from: safeString(from),
     text: safeString(text),
     messageId: messageId ? String(messageId) : null,
     fromMe,
+    timestamp,
     raw: body,
   };
 }
@@ -149,13 +156,13 @@ async function webhook(req, res) {
         lastMessage: text,
         messagesCount: 0,
         provider: 'waha',
-        lastInteractionAt: new Date(),
+        lastInteractionAt: new Date(parsed.timestamp * 1000),
       });
     } else {
       await conversation.update({
         lastMessage: text,
-        status: conversation.status || 'OPEN',
-        lastInteractionAt: new Date(),
+        status: 'OPEN',
+        lastInteractionAt: new Date(parsed.timestamp * 1000),
       });
     }
 
@@ -187,7 +194,7 @@ async function webhook(req, res) {
     await conversation.update({
       messagesCount: totalMessages,
       lastMessage: text,
-      lastInteractionAt: new Date(),
+      lastInteractionAt: new Date(parsed.timestamp * 1000),
     });
 
     return res.status(200).json({
