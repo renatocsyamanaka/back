@@ -48,7 +48,7 @@ function isNo(text) {
 }
 
 function extractIncomingMessage(body) {
-  const payload = body?.payload || body?.data || body || {};
+  const payload = body?.payload || body?.data || body?.message || body || {};
 
   const from =
     payload?.from ||
@@ -93,7 +93,7 @@ function extractIncomingMessage(body) {
     text: safeString(text),
     messageId: messageId ? String(messageId) : null,
     fromMe,
-    timestamp,
+    timestamp: Number(timestamp) || Math.floor(Date.now() / 1000),
     raw: body,
   };
 }
@@ -195,7 +195,6 @@ async function findDeliveryByInvoice(noteNumber) {
 
   if (!normalized) return null;
 
-  // Tenta usar model se existir
   const DeliveryReport =
     sequelize?.models?.DeliveryReport ||
     sequelize?.models?.delivery_reports ||
@@ -235,8 +234,6 @@ async function findDeliveryByInvoice(noteNumber) {
     };
   }
 
-  // Fallback SQL tolerante.
-  // Ajuste nomes se quiser depois.
   try {
     const [rows] = await sequelize.query(
       `
@@ -404,21 +401,10 @@ async function runBotFlow({ conversation, phone, text }) {
 
 async function webhook(req, res) {
   try {
-    console.log('WHATSAPP WEBHOOK BODY:', JSON.stringify(req.body, null, 2));
-
     const parsed = extractIncomingMessage(req.body);
 
     const phone = normalizePhone(parsed.from);
     const text = safeString(parsed.text);
-
-    // Ignora duplicado do WAHA se vier message.any + message
-    if (parsed.event && !['message', 'message.any', ''].includes(parsed.event)) {
-      return res.status(200).json({
-        ok: true,
-        ignored: true,
-        reason: 'unsupported_event',
-      });
-    }
 
     if (!phone) {
       return res.status(200).json({
@@ -444,9 +430,19 @@ async function webhook(req, res) {
       });
     }
 
+    if (parsed.event && parsed.event !== 'message') {
+      return res.status(200).json({
+        ok: true,
+        ignored: true,
+        reason: 'unsupported_event',
+      });
+    }
+
     let conversation = await WhatsappConversation.findOne({
       where: { phone },
     });
+
+    const interactionDate = new Date(parsed.timestamp * 1000);
 
     if (!conversation) {
       conversation = await WhatsappConversation.create({
@@ -456,13 +452,13 @@ async function webhook(req, res) {
         lastMessage: text,
         messagesCount: 0,
         provider: 'waha',
-        lastInteractionAt: new Date(parsed.timestamp * 1000),
+        lastInteractionAt: interactionDate,
       });
     } else {
       await conversation.update({
         lastMessage: text,
         status: 'OPEN',
-        lastInteractionAt: new Date(parsed.timestamp * 1000),
+        lastInteractionAt: interactionDate,
       });
     }
 
@@ -477,15 +473,21 @@ async function webhook(req, res) {
       });
     }
 
-    if (!alreadyExists) {
-      await WhatsappMessage.create({
+    if (alreadyExists) {
+      return res.status(200).json({
+        ok: true,
         conversationId: conversation.id,
-        direction: 'in',
-        providerMessageId: parsed.messageId,
-        text,
-        rawPayload: parsed.raw,
+        duplicated: true,
       });
     }
+
+    await WhatsappMessage.create({
+      conversationId: conversation.id,
+      direction: 'in',
+      providerMessageId: parsed.messageId,
+      text,
+      rawPayload: parsed.raw,
+    });
 
     const totalMessages = await WhatsappMessage.count({
       where: { conversationId: conversation.id },
@@ -494,21 +496,19 @@ async function webhook(req, res) {
     await conversation.update({
       messagesCount: totalMessages,
       lastMessage: text,
-      lastInteractionAt: new Date(parsed.timestamp * 1000),
+      lastInteractionAt: interactionDate,
     });
 
-    if (!alreadyExists) {
-      await runBotFlow({
-        conversation,
-        phone,
-        text,
-      });
-    }
+    await runBotFlow({
+      conversation,
+      phone,
+      text,
+    });
 
     return res.status(200).json({
       ok: true,
       conversationId: conversation.id,
-      duplicated: !!alreadyExists,
+      duplicated: false,
     });
   } catch (error) {
     console.error('WHATSAPP WEBHOOK ERROR:', error);
@@ -520,8 +520,14 @@ async function webhook(req, res) {
 
 async function send(req, res) {
   try {
-    const { id } = req.params;
-    const text = safeString(req.body?.message);
+    const conversationId = req.params?.id || req.body?.conversationId;
+    const text = safeString(req.body?.message || req.body?.text);
+
+    if (!conversationId) {
+      return res.status(400).json({
+        error: 'ID da conversa é obrigatório.',
+      });
+    }
 
     if (!text) {
       return res.status(400).json({
@@ -529,7 +535,7 @@ async function send(req, res) {
       });
     }
 
-    const conversation = await WhatsappConversation.findByPk(id);
+    const conversation = await WhatsappConversation.findByPk(conversationId);
 
     if (!conversation) {
       return res.status(404).json({

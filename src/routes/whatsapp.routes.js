@@ -260,6 +260,47 @@ router.get(
 
 /**
  * @swagger
+ * /api/whatsapp/send:
+ *   post:
+ *     summary: Envia mensagem manual pelo WhatsApp
+ *     tags: [WhatsApp]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phone
+ *               - text
+ *             properties:
+ *               phone:
+ *                 type: string
+ *                 example: "5511999999999"
+ *               text:
+ *                 type: string
+ *                 example: "Olá, tudo bem?"
+ *     responses:
+ *       200:
+ *         description: Mensagem enviada com sucesso
+ *       400:
+ *         description: Dados inválidos
+ *       403:
+ *         description: Sem permissão
+ *       500:
+ *         description: Erro interno
+ */
+router.post(
+  '/send',
+  auth(),
+  requirePermission('WHATSAPP_VIEW'),
+  controller.send
+);
+
+/**
+ * @swagger
  * /api/whatsapp/webhook:
  *   post:
  *     summary: Recebe eventos do WAHA
@@ -284,5 +325,10 @@ router.get(
  *         description: Erro interno
  */
 router.post('/webhook', controller.webhook);
-
+router.post(
+  '/conversations/:id/send',
+  auth(),
+  requirePermission('WHATSAPP_VIEW'),
+  controller.send
+);
 module.exports = router;
