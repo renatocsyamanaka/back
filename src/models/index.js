@@ -40,8 +40,26 @@ const SystemUpdate = require('./SystemUpdate');
 const PartRequest = require('./PartRequest');
 const PartRequestItem = require('./PartRequestItem');
 const PartRequestHistory = require('./PartRequestHistory');
+//Whatsapp
+const WhatsappConversation = require('./WhatsappConversation');
+const WhatsappMessage = require('./WhatsappMessage');
+const WhatsappFlow = require('./WhatsappFlow');
+const WhatsappFlowStep = require('./WhatsappFlowStep');
 
 
+
+// ----------------- Whatsapp  -----------------
+WhatsappConversation.hasMany(WhatsappMessage, {  as: 'messages',  foreignKey: 'conversationId',  onDelete: 'CASCADE',});
+WhatsappMessage.belongsTo(WhatsappConversation, {  as: 'conversation',  foreignKey: 'conversationId',});
+
+WhatsappFlow.hasMany(WhatsappFlowStep, {  as: 'steps',  foreignKey: 'flowId',  onDelete: 'CASCADE',});
+WhatsappFlowStep.belongsTo(WhatsappFlow, {  as: 'flow',  foreignKey: 'flowId',});
+
+User.hasMany(WhatsappConversation, {  as: 'whatsappConversationsCreated',  foreignKey: 'createdById',});
+WhatsappConversation.belongsTo(User, {  as: 'createdBy',  foreignKey: 'createdById',});
+
+User.hasMany(WhatsappConversation, {  as: 'whatsappConversationsUpdated',  foreignKey: 'updatedById',});
+WhatsappConversation.belongsTo(User, {  as: 'updatedBy',  foreignKey: 'updatedById',});
 
 // ----------------- Dashboard Banners -----------------
 DashboardBanner.belongsTo(User, {  as: 'createdBy',  foreignKey: 'createdById',  onDelete: 'SET NULL',  onUpdate: 'CASCADE',});
@@ -614,6 +632,10 @@ module.exports = {
   News,
   NewsRead,
   Sector,
+  WhatsappConversation,
+  WhatsappMessage,
+  WhatsappFlow,
+  WhatsappFlowStep,
   NewsSector,
   InstallationProject,
   InstallationProjectItem,
