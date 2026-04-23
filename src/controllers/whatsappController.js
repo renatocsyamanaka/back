@@ -201,18 +201,12 @@ async function findDeliveryByInvoice(noteNumber) {
 
   const DeliveryReport =
     sequelize?.models?.DeliveryReport ||
-    sequelize?.models?.delivery_reports ||
     null;
 
   if (DeliveryReport) {
     const row = await DeliveryReport.findOne({
       where: {
-        [Op.or]: [
-          { notaFiscal: normalized },
-          { invoiceNumber: normalized },
-          { numeroNota: normalized },
-          { nfe: normalized },
-        ],
+        notaFiscal: normalized,
       },
       order: [['updatedAt', 'DESC']],
     });
@@ -220,21 +214,9 @@ async function findDeliveryByInvoice(noteNumber) {
     if (!row) return null;
 
     return {
-      status:
-        row.statusEntrega ||
-        row.deliveryStatus ||
-        row.status ||
-        'Sem status',
-      previsao:
-        row.previsaoEntrega ||
-        row.estimatedDeliveryDate ||
-        row.previsao ||
-        null,
-      cte:
-        row.cte ||
-        row.numeroCte ||
-        row.CTE ||
-        null,
+      status: row.statusEntrega || row.status || 'Sem status',
+      previsao: row.previsaoEntrega || null,
+      cte: row.cte || null,
     };
   }
 
@@ -243,6 +225,7 @@ async function findDeliveryByInvoice(noteNumber) {
       `
       SELECT
         id,
+        cte,
         notaFiscal,
         status,
         statusEntrega,
