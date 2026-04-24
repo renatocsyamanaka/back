@@ -1,4 +1,5 @@
-const { WhatsappConversation, WhatsappMessage, sequelize } = require('../models');
+const { Op } = require('sequelize');
+const { WhatsappConversation, WhatsappMessage, User, sequelize } = require('../models');
 const waha = require('../services/wahaService');
 
 function normalizePhone(value) {
@@ -7,6 +8,73 @@ function normalizePhone(value) {
     .replace(/@s\.whatsapp\.net$/i, '')
     .replace(/@lid$/i, '')
     .replace(/\D/g, '');
+}
+
+function phoneVariants(value) {
+  const digits = normalizePhone(value);
+  const variants = new Set();
+
+  if (digits) variants.add(digits);
+
+  if (digits.startsWith('55') && digits.length > 11) {
+    variants.add(digits.slice(2));
+  } else if (digits.length >= 10 && digits.length <= 11) {
+    variants.add(`55${digits}`);
+  }
+
+  return [...variants].filter(Boolean);
+}
+
+function isSamePhone(a, b) {
+  const aVariants = phoneVariants(a);
+  const bVariants = phoneVariants(b);
+
+  return aVariants.some((item) => bVariants.includes(item));
+}
+
+function hasRegisteredPhone(user) {
+  return Boolean(normalizePhone(user?.phone));
+}
+
+async function findUserByWhatsappPhone(phone) {
+  const incomingVariants = phoneVariants(phone);
+
+  if (!incomingVariants.length) return null;
+
+  // Primeiro tenta buscar pelo formato já padronizado.
+  let user = await User.findOne({
+    where: {
+      phone: {
+        [Op.in]: incomingVariants,
+      },
+      isActive: true,
+    },
+    attributes: ['id', 'name', 'email', 'phone', 'cargoDescritivo', 'isActive'],
+  });
+
+  if (user) return user;
+
+  // Fallback para telefones antigos com máscara: (11) 99999-9999, 11-99999-9999 etc.
+  const usersWithPhone = await User.findAll({
+    where: {
+      phone: {
+        [Op.ne]: null,
+      },
+      isActive: true,
+    },
+    attributes: ['id', 'name', 'email', 'phone', 'cargoDescritivo', 'isActive'],
+  });
+
+  return usersWithPhone.find((item) => isSamePhone(item.phone, phone)) || null;
+}
+
+function buildUnregisteredPhoneMessage() {
+  return (
+    '⚠️ Número não cadastrado.\n\n' +
+    'Não identificamos seu telefone na base de usuários.\n\n' +
+    'Para utilizar o atendimento via WhatsApp, solicite o cadastro do seu número com a equipe de logística.\n\n' +
+    'Depois que o cadastro for realizado, envie uma nova mensagem por aqui.'
+  );
 }
 
 function safeString(value) {
@@ -506,6 +574,8 @@ async function webhook(req, res) {
       });
     }
 
+    const registeredUser = await findUserByWhatsappPhone(phone);
+
     let conversation = await WhatsappConversation.findOne({
       where: { phone },
     });
@@ -514,7 +584,7 @@ async function webhook(req, res) {
       conversation = await WhatsappConversation.create({
         phone,
         providerChatId: parsed.from,
-        contactName: phone,
+        contactName: registeredUser?.name || phone,
         status: 'OPEN',
         provider: 'waha',
         lastMessage: text,
@@ -523,14 +593,43 @@ async function webhook(req, res) {
         lastInteractionAt: interactionDate,
         currentFlowCode: 'DEFAULT_TRACKING',
         currentStepCode: 'INIT',
+        metadata: registeredUser
+          ? {
+              userId: registeredUser.id,
+              userName: registeredUser.name,
+              userEmail: registeredUser.email,
+              userCargo: registeredUser.cargoDescritivo,
+              phoneValidatedAt: new Date().toISOString(),
+            }
+          : {
+              phoneValidation: 'NOT_REGISTERED',
+              phoneValidatedAt: new Date().toISOString(),
+            },
       });
     } else {
       await conversation.update({
         providerChatId: parsed.from,
+        contactName: registeredUser?.name || conversation.contactName || phone,
         lastMessage: text,
         status: 'OPEN',
         lastUserMessageAt: interactionDate,
         lastInteractionAt: interactionDate,
+        metadata: {
+          ...(conversation.metadata || {}),
+          ...(registeredUser
+            ? {
+                userId: registeredUser.id,
+                userName: registeredUser.name,
+                userEmail: registeredUser.email,
+                userCargo: registeredUser.cargoDescritivo,
+                phoneValidation: 'REGISTERED',
+                phoneValidatedAt: new Date().toISOString(),
+              }
+            : {
+                phoneValidation: 'NOT_REGISTERED',
+                phoneValidatedAt: new Date().toISOString(),
+              }),
+        },
       });
 
       await conversation.reload();
@@ -572,6 +671,23 @@ async function webhook(req, res) {
     });
 
     await conversation.reload();
+
+    if (!registeredUser || !hasRegisteredPhone(registeredUser)) {
+      await sendMessageAndSave({
+        conversation,
+        text: buildUnregisteredPhoneMessage(),
+      });
+
+      await conversation.reload();
+
+      return res.status(200).json({
+        ok: true,
+        conversationId: conversation.id,
+        duplicated: false,
+        blocked: true,
+        reason: 'phone_not_registered_in_users',
+      });
+    }
 
     await runBotFlow({
       conversation,
