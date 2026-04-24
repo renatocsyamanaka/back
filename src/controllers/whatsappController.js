@@ -10,84 +10,12 @@ function normalizePhone(value) {
     .replace(/\D/g, '');
 }
 
-function phoneVariants(value) {
-  const digits = normalizePhone(value);
-  const variants = new Set();
-
-  if (digits) variants.add(digits);
-
-  if (digits.startsWith('55') && digits.length > 11) {
-    variants.add(digits.slice(2));
-  } else if (digits.length >= 10 && digits.length <= 11) {
-    variants.add(`55${digits}`);
-  }
-
-  return [...variants].filter(Boolean);
-}
-
-function isSamePhone(a, b) {
-  const aVariants = phoneVariants(a);
-  const bVariants = phoneVariants(b);
-
-  return aVariants.some((item) => bVariants.includes(item));
-}
-
-function hasRegisteredPhone(user) {
-  return Boolean(normalizePhone(user?.phone));
-}
-
-async function findUserByWhatsappPhone(phone) {
-  const incomingVariants = phoneVariants(phone);
-
-  if (!incomingVariants.length) return null;
-
-  const users = await User.findAll({
-    where: {
-      phone: {
-        [Op.ne]: null,
-      },
-      isActive: true,
-    },
-    attributes: ['id', 'name', 'email', 'phone'],
-  });
-
-  return users.find((user) =>
-    incomingVariants.some((variant) =>
-      normalizePhone(user.phone) === normalizePhone(variant)
-    )
-  ) || null;
-}
-
-function buildUnregisteredPhoneMessage() {
-  return (
-    '⚠️ Número não cadastrado.\n\n' +
-    'Não identificamos seu telefone na base de usuários.\n\n' +
-    'Para utilizar o atendimento via WhatsApp, solicite o cadastro do seu número com a equipe de logística.\n\n' +
-    'Depois que o cadastro for realizado, envie uma nova mensagem por aqui.'
-  );
-}
-
 function safeString(value) {
   return String(value || '').trim();
 }
 
 function normalizeText(value) {
   return safeString(value).toLowerCase();
-}
-
-function isGreeting(text) {
-  const value = normalizeText(text);
-  return [
-    'oi',
-    'ola',
-    'olá',
-    'bom dia',
-    'boa tarde',
-    'boa noite',
-    'menu',
-    'iniciar',
-    'start',
-  ].includes(value);
 }
 
 function isYes(text) {
@@ -121,7 +49,7 @@ function normalizeMessageId(rawValue) {
 
     try {
       return JSON.stringify(rawValue);
-    } catch (error) {
+    } catch {
       return String(rawValue);
     }
   }
@@ -130,15 +58,14 @@ function normalizeMessageId(rawValue) {
 }
 
 function extractProviderMessageId(payload) {
-  const candidate =
+  return normalizeMessageId(
     payload?.id ??
     payload?.messageId ??
     payload?.key?.id ??
     payload?.message?.id ??
     payload?._data?.id ??
-    null;
-
-  return normalizeMessageId(candidate);
+    null
+  );
 }
 
 function extractIncomingMessage(body) {
@@ -170,8 +97,6 @@ function extractIncomingMessage(body) {
     payload?._data?.id ??
     null;
 
-  const messageId = normalizeMessageId(rawMessageId);
-
   const fromMe =
     payload?.fromMe === true ||
     payload?.from_me === true ||
@@ -182,17 +107,61 @@ function extractIncomingMessage(body) {
     payload?._data?.t ||
     Math.floor(Date.now() / 1000);
 
-  const event = safeString(body?.event || body?.type || '');
-
   return {
-    event,
+    event: safeString(body?.event || body?.type || ''),
     from: safeString(from),
     text: safeString(text),
-    messageId,
+    messageId: normalizeMessageId(rawMessageId),
     fromMe,
     timestamp: Number(timestamp) || Math.floor(Date.now() / 1000),
     raw: body,
   };
+}
+
+function phoneVariants(value) {
+  const digits = normalizePhone(value);
+  const variants = new Set();
+
+  if (digits) variants.add(digits);
+
+  if (digits.startsWith('55') && digits.length > 11) {
+    variants.add(digits.slice(2));
+  } else if (digits.length >= 10 && digits.length <= 11) {
+    variants.add(`55${digits}`);
+  }
+
+  return [...variants].filter(Boolean);
+}
+
+async function findUserByWhatsappPhone(phone) {
+  const incomingVariants = phoneVariants(phone);
+
+  if (!incomingVariants.length) return null;
+
+  const users = await User.findAll({
+    where: {
+      phone: {
+        [Op.ne]: null,
+      },
+      isActive: true,
+    },
+    attributes: ['id', 'name', 'email', 'phone', 'cargoDescritivo'],
+  });
+
+  return (
+    users.find((user) =>
+      incomingVariants.some((variant) => normalizePhone(user.phone) === normalizePhone(variant))
+    ) || null
+  );
+}
+
+function buildUnregisteredPhoneMessage() {
+  return (
+    '⚠️ Número não cadastrado.\n\n' +
+    'Não identificamos seu telefone na base de usuários.\n\n' +
+    'Para utilizar o atendimento via WhatsApp, solicite o cadastro do seu número com a equipe de logística.\n\n' +
+    'Depois que o cadastro for realizado, envie uma nova mensagem por aqui.'
+  );
 }
 
 function getCurrentStep(conversation) {
@@ -274,12 +243,14 @@ async function detail(req, res) {
 }
 
 async function sendMessageAndSave({ conversation, text, senderType = 'BOT' }) {
-  const chatId =
-    safeString(conversation.providerChatId) ||
-    safeString(conversation.phone);
+  const chatId = safeString(conversation.providerChatId) || safeString(conversation.phone);
 
   if (!chatId) {
     throw new Error('ChatId não encontrado na conversa');
+  }
+
+  if (isGroupChat(chatId)) {
+    throw new Error('Envio para grupos não é permitido.');
   }
 
   const now = new Date();
@@ -304,10 +275,6 @@ async function sendMessageAndSave({ conversation, text, senderType = 'BOT' }) {
     lastInteractionAt: now,
   });
 
-  conversation.lastMessage = text;
-  conversation.lastBotMessageAt = now;
-  conversation.lastInteractionAt = now;
-
   return result;
 }
 
@@ -316,10 +283,7 @@ async function findDeliveryByInvoice(noteNumber) {
 
   if (!normalized) return null;
 
-  const DeliveryReport =
-    sequelize?.models?.DeliveryReport ||
-    sequelize?.models?.delivery_reports ||
-    null;
+  const DeliveryReport = sequelize?.models?.DeliveryReport || sequelize?.models?.delivery_reports || null;
 
   if (DeliveryReport) {
     const row = await DeliveryReport.findOne({
@@ -394,6 +358,9 @@ async function runBotFlow({ conversation, text }) {
   const step = getCurrentStep(conversation);
   const normalized = normalizeText(text);
 
+  console.log('🤖 BOT FLOW STEP:', step);
+  console.log('🤖 BOT FLOW TEXT:', text);
+
   if (step === 'INIT' || step === 'GREETING') {
     await sendMessageAndSave({
       conversation,
@@ -458,9 +425,6 @@ async function runBotFlow({ conversation, text }) {
       lastCte: result?.cte || null,
     });
 
-    conversation.lastNoteNumber = noteNumber;
-    conversation.lastCte = result?.cte || null;
-
     await sendMessageAndSave({
       conversation,
       text: formatBotDeliveryMessage(result),
@@ -512,43 +476,19 @@ async function webhook(req, res) {
   try {
     const parsed = extractIncomingMessage(req.body);
 
-        let phone = normalizePhone(parsed.from);
+    console.log('📲 EVENT:', parsed.event);
+    console.log('📲 FROM RAW:', parsed.from);
+    console.log('📲 PHONE FINAL:', normalizePhone(parsed.from));
+    console.log('📲 TEXT:', parsed.text);
+    console.log('📲 MESSAGE ID:', parsed.messageId);
+    console.log('📲 FROM ME:', parsed.fromMe);
 
-        const possiblePhones = [
-        parsed.raw?.payload?.sender?.phone,
-        parsed.raw?.payload?.sender?.id,
-        parsed.raw?.payload?.contact?.phone,
-        parsed.raw?.payload?.contact?.id,
-        parsed.raw?.payload?.author,
-        parsed.raw?.payload?.participant,
-        parsed.raw?.payload?.from,
-        parsed.from,
-        ];
-
-        for (const item of possiblePhones) {
-        const candidate = normalizePhone(item);
-
-        // telefone BR normalmente tem 10, 11, 12 ou 13 dígitos com 55
-        if (candidate && candidate.length >= 10 && candidate.length <= 13) {
-            phone = candidate;
-            break;
-        }
-        }
-
-        console.log('📲 FROM RAW:', parsed.from);
-        console.log('📲 PHONE FINAL:', phone);
-
-        if (!phone || phone.length > 13) {
-        return res.status(200).json({
-            ok: true,
-            ignored: true,
-            reason: 'real_phone_not_found_lid_received',
-        });
-        }
     const text = safeString(parsed.text);
+    const phone = normalizePhone(parsed.from);
     const interactionDate = new Date(parsed.timestamp * 1000);
 
     if (isGroupChat(parsed.from)) {
+      console.log('🚫 Ignorado grupo:', parsed.from);
       return res.status(200).json({
         ok: true,
         ignored: true,
@@ -588,19 +528,30 @@ async function webhook(req, res) {
       });
     }
 
-    if (parsed.event && parsed.event !== 'message') {
+    if (
+      parsed.event &&
+      parsed.event !== 'message' &&
+      parsed.event !== 'message.any'
+    ) {
       return res.status(200).json({
         ok: true,
         ignored: true,
         reason: 'unsupported_event',
+        event: parsed.event,
       });
     }
-
-    const registeredUser = await findUserByWhatsappPhone(phone);
 
     let conversation = await WhatsappConversation.findOne({
       where: { phone },
     });
+
+    let registeredUser = null;
+
+    try {
+      registeredUser = await findUserByWhatsappPhone(phone);
+    } catch (error) {
+      console.error('WHATSAPP USER LOOKUP ERROR:', error.message);
+    }
 
     if (!conversation) {
       conversation = await WhatsappConversation.create({
@@ -621,6 +572,7 @@ async function webhook(req, res) {
               userName: registeredUser.name,
               userEmail: registeredUser.email,
               userCargo: registeredUser.cargoDescritivo,
+              phoneValidation: 'REGISTERED',
               phoneValidatedAt: new Date().toISOString(),
             }
           : {
@@ -666,6 +618,8 @@ async function webhook(req, res) {
       });
 
       if (alreadyExists) {
+        console.log('⚠️ MENSAGEM DUPLICADA, NÃO VOU RESPONDER:', parsed.messageId);
+
         return res.status(200).json({
           ok: true,
           conversationId: conversation.id,
@@ -694,7 +648,10 @@ async function webhook(req, res) {
 
     await conversation.reload();
 
-    if (!registeredUser || !hasRegisteredPhone(registeredUser)) {
+    // Caso queira obrigar cadastro, descomente este bloco.
+    // Hoje deixei sem bloquear para não travar o fluxo com @lid.
+    /*
+    if (!registeredUser) {
       await sendMessageAndSave({
         conversation,
         text: buildUnregisteredPhoneMessage(),
@@ -710,6 +667,7 @@ async function webhook(req, res) {
         reason: 'phone_not_registered_in_users',
       });
     }
+    */
 
     await runBotFlow({
       conversation,
