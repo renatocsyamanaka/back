@@ -1,6 +1,15 @@
 const { Op } = require('sequelize');
 const { WhatsappConversation, WhatsappMessage, User, sequelize } = require('../models');
 const waha = require('../services/wahaService');
+const { sendMail } = require('../services/mailer');
+
+function safeString(value) {
+  return String(value || '').trim();
+}
+
+function normalizeText(value) {
+  return safeString(value).toLowerCase();
+}
 
 function normalizePhone(value) {
   return String(value || '')
@@ -10,12 +19,21 @@ function normalizePhone(value) {
     .replace(/\D/g, '');
 }
 
-function safeString(value) {
-  return String(value || '').trim();
+function normalizeIdentifier(value) {
+  return safeString(value).toLowerCase().replace(/[.\-/\s]/g, '');
 }
 
-function normalizeText(value) {
-  return safeString(value).toLowerCase();
+function isLidChat(chatId) {
+  return safeString(chatId).endsWith('@lid');
+}
+
+function isGroupChat(chatId) {
+  return safeString(chatId).endsWith('@g.us');
+}
+
+function isBroadcastChat(chatId) {
+  const value = safeString(chatId);
+  return value.includes('status@broadcast') || value.includes('@broadcast');
 }
 
 function isYes(text) {
@@ -26,15 +44,6 @@ function isYes(text) {
 function isNo(text) {
   const value = normalizeText(text);
   return ['nao', 'não', 'n', 'no', 'sair', 'encerrar', 'cancelar'].includes(value);
-}
-
-function isGroupChat(chatId) {
-  return safeString(chatId).endsWith('@g.us');
-}
-
-function isBroadcastChat(chatId) {
-  const value = safeString(chatId);
-  return value.includes('status@broadcast') || value.includes('@broadcast');
 }
 
 function normalizeMessageId(rawValue) {
@@ -60,11 +69,11 @@ function normalizeMessageId(rawValue) {
 function extractProviderMessageId(payload) {
   return normalizeMessageId(
     payload?.id ??
-    payload?.messageId ??
-    payload?.key?.id ??
-    payload?.message?.id ??
-    payload?._data?.id ??
-    null
+      payload?.messageId ??
+      payload?.key?.id ??
+      payload?.message?.id ??
+      payload?._data?.id ??
+      null
   );
 }
 
@@ -145,7 +154,7 @@ async function findUserByWhatsappPhone(phone) {
       },
       isActive: true,
     },
-    attributes: ['id', 'name', 'email', 'phone', 'cargoDescritivo'],
+    attributes: ['id', 'name', 'email', 'phone', 'cargoDescritivo', 'avatarUrl'],
   });
 
   return (
@@ -155,27 +164,83 @@ async function findUserByWhatsappPhone(phone) {
   );
 }
 
-function buildUnregisteredPhoneMessage() {
+async function findUserByIdentifier(identifier) {
+  const value = safeString(identifier);
+  const normalized = normalizeIdentifier(value);
+
+  if (!value) return null;
+
+  const users = await User.findAll({
+    where: {
+      isActive: true,
+    },
+    attributes: ['id', 'name', 'email', 'phone', 'cargoDescritivo', 'avatarUrl'],
+  });
+
   return (
-    '⚠️ Número não cadastrado.\n\n' +
-    'Não identificamos seu telefone na base de usuários.\n\n' +
-    'Para utilizar o atendimento via WhatsApp, solicite o cadastro do seu número com a equipe de logística.\n\n' +
-    'Depois que o cadastro for realizado, envie uma nova mensagem por aqui.'
+    users.find((user) => {
+      const email = normalizeIdentifier(user.email);
+      const phone = normalizeIdentifier(user.phone);
+
+      return email === normalized || phone === normalized;
+    }) || null
   );
+}
+
+function generateVerificationCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+async function sendVerificationEmail(user, code) {
+  if (!user?.email) {
+    throw new Error('Usuário não possui e-mail cadastrado para validação.');
+  }
+
+  await sendMail({
+    to: user.email,
+    subject: 'Código de validação do WhatsApp',
+    html: `
+      <div style="font-family: Arial, sans-serif; color:#111827;">
+        <h2>Validação de atendimento via WhatsApp</h2>
+        <p>Olá, ${user.name || 'usuário'}.</p>
+        <p>Use o código abaixo para liberar seu atendimento no WhatsApp:</p>
+        <div style="font-size:28px;font-weight:800;letter-spacing:4px;background:#f3f4f6;padding:14px 18px;border-radius:10px;display:inline-block;">
+          ${code}
+        </div>
+        <p style="margin-top:18px;">Este código expira em 10 minutos.</p>
+        <p>Se você não solicitou esse atendimento, ignore este e-mail.</p>
+      </div>
+    `,
+    text: `Seu código de validação do WhatsApp é: ${code}. Ele expira em 10 minutos.`,
+  });
 }
 
 function getCurrentStep(conversation) {
   return safeString(conversation?.currentStepCode) || 'INIT';
 }
 
-async function setCurrentStep(conversation, step) {
-  await conversation.update({ currentStepCode: step });
+async function setCurrentStep(conversation, step, status = null) {
+  const payload = { currentStepCode: step };
+
+  if (status) {
+    payload.status = status;
+    if (status !== 'CLOSED') payload.closedAt = null;
+  }
+
+  await conversation.update(payload);
   conversation.currentStepCode = step;
+  if (status) conversation.status = status;
 }
 
-async function clearCurrentStep(conversation) {
-  await conversation.update({ currentStepCode: 'INIT' });
+async function closeConversation(conversation) {
+  await conversation.update({
+    currentStepCode: 'INIT',
+    status: 'CLOSED',
+    closedAt: new Date(),
+  });
+
   conversation.currentStepCode = 'INIT';
+  conversation.status = 'CLOSED';
 }
 
 async function recalcConversationCounters(conversation) {
@@ -183,10 +248,7 @@ async function recalcConversationCounters(conversation) {
     where: { conversationId: conversation.id },
   });
 
-  await conversation.update({
-    messagesCount: totalMessages,
-  });
-
+  await conversation.update({ messagesCount: totalMessages });
   conversation.messagesCount = totalMessages;
 }
 
@@ -245,13 +307,8 @@ async function detail(req, res) {
 async function sendMessageAndSave({ conversation, text, senderType = 'BOT' }) {
   const chatId = safeString(conversation.providerChatId) || safeString(conversation.phone);
 
-  if (!chatId) {
-    throw new Error('ChatId não encontrado na conversa');
-  }
-
-  if (isGroupChat(chatId)) {
-    throw new Error('Envio para grupos não é permitido.');
-  }
+  if (!chatId) throw new Error('ChatId não encontrado na conversa.');
+  if (isGroupChat(chatId)) throw new Error('Envio para grupos não é permitido.');
 
   const now = new Date();
   const result = await waha.sendText(chatId, text);
@@ -283,13 +340,14 @@ async function findDeliveryByInvoice(noteNumber) {
 
   if (!normalized) return null;
 
-  const DeliveryReport = sequelize?.models?.DeliveryReport || sequelize?.models?.delivery_reports || null;
+  const DeliveryReport =
+    sequelize?.models?.DeliveryReport ||
+    sequelize?.models?.delivery_reports ||
+    null;
 
   if (DeliveryReport) {
     const row = await DeliveryReport.findOne({
-      where: {
-        notaFiscal: normalized,
-      },
+      where: { notaFiscal: normalized },
       order: [['updatedAt', 'DESC']],
     });
 
@@ -302,39 +360,34 @@ async function findDeliveryByInvoice(noteNumber) {
     };
   }
 
-  try {
-    const [rows] = await sequelize.query(
-      `
-      SELECT
-        id,
-        cte,
-        notaFiscal,
-        status,
-        statusEntrega,
-        previsaoEntrega,
-        updatedAt
-      FROM delivery_reports
-      WHERE notaFiscal = :note
-      ORDER BY updatedAt DESC
-      LIMIT 1
-      `,
-      {
-        replacements: { note: normalized },
-      }
-    );
+  const [rows] = await sequelize.query(
+    `
+    SELECT
+      id,
+      cte,
+      notaFiscal,
+      status,
+      statusEntrega,
+      previsaoEntrega,
+      updatedAt
+    FROM delivery_reports
+    WHERE notaFiscal = :note
+    ORDER BY updatedAt DESC
+    LIMIT 1
+    `,
+    {
+      replacements: { note: normalized },
+    }
+  );
 
-    const row = Array.isArray(rows) ? rows[0] : null;
-    if (!row) return null;
+  const row = Array.isArray(rows) ? rows[0] : null;
+  if (!row) return null;
 
-    return {
-      status: row.statusEntrega || row.status || 'Sem status',
-      previsao: row.previsaoEntrega || null,
-      cte: row.cte || null,
-    };
-  } catch (error) {
-    console.error('DELIVERY LOOKUP ERROR:', error.message);
-    return null;
-  }
+  return {
+    status: row.statusEntrega || row.status || 'Sem status',
+    previsao: row.previsaoEntrega || null,
+    cte: row.cte || null,
+  };
 }
 
 function formatBotDeliveryMessage(result) {
@@ -354,12 +407,214 @@ function formatBotDeliveryMessage(result) {
   );
 }
 
-async function runBotFlow({ conversation, text }) {
+async function startIdentityFlow(conversation) {
+  await sendMessageAndSave({
+    conversation,
+    text:
+      '🔐 Não consegui identificar seu número automaticamente.\n\n' +
+      'Para continuar com segurança, informe seu e-mail cadastrado.',
+  });
+
+  await setCurrentStep(conversation, 'ASK_IDENTITY', 'OPEN');
+}
+
+async function handleIdentityStep(conversation, text) {
+  const identifier = safeString(text);
+  const user = await findUserByIdentifier(identifier);
+
+  if (!user) {
+    await sendMessageAndSave({
+      conversation,
+      text:
+        'Não encontrei nenhum usuário ativo com esse e-mail.\n\n' +
+        'Verifique e envie novamente o e-mail cadastrado.',
+    });
+
+    await setCurrentStep(conversation, 'ASK_IDENTITY', 'OPEN');
+    return;
+  }
+
+  if (!user.email) {
+    await sendMessageAndSave({
+      conversation,
+      text:
+        'Seu cadastro não possui e-mail para validação.\n\n' +
+        'Procure a equipe responsável para atualizar seu cadastro.',
+    });
+
+    await closeConversation(conversation);
+    return;
+  }
+
+  const code = generateVerificationCode();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  await conversation.update({
+    linkedUserId: user.id,
+    pendingIdentifier: identifier,
+    verificationCode: code,
+    verificationExpiresAt: expiresAt,
+    metadata: {
+      ...(conversation.metadata || {}),
+      pendingUserId: user.id,
+      pendingUserName: user.name,
+      pendingUserEmail: user.email,
+      phoneValidation: 'PENDING_CODE',
+      phoneValidatedAt: new Date().toISOString(),
+    },
+  });
+
+  await sendVerificationEmail(user, code);
+
+  await sendMessageAndSave({
+    conversation,
+    text:
+      '📧 Enviamos um código de confirmação para o e-mail cadastrado.\n\n' +
+      'Digite o código recebido para continuar.',
+  });
+
+  await setCurrentStep(conversation, 'ASK_VERIFICATION_CODE', 'OPEN');
+}
+
+async function handleVerificationCodeStep(conversation, text) {
+  const code = safeString(text).replace(/\D/g, '');
+
+  if (!conversation.verificationCode || !conversation.verificationExpiresAt) {
+    await sendMessageAndSave({
+      conversation,
+      text:
+        'Sua validação expirou ou não foi iniciada.\n\n' +
+        'Informe novamente seu e-mail cadastrado.',
+    });
+
+    await setCurrentStep(conversation, 'ASK_IDENTITY', 'OPEN');
+    return;
+  }
+
+  if (new Date(conversation.verificationExpiresAt).getTime() < Date.now()) {
+    await conversation.update({
+      verificationCode: null,
+      verificationExpiresAt: null,
+    });
+
+    await sendMessageAndSave({
+      conversation,
+      text:
+        'O código expirou.\n\n' +
+        'Informe novamente seu e-mail cadastrado para receber um novo código.',
+    });
+
+    await setCurrentStep(conversation, 'ASK_IDENTITY', 'OPEN');
+    return;
+  }
+
+  if (code !== String(conversation.verificationCode)) {
+    await sendMessageAndSave({
+      conversation,
+      text: 'Código inválido. Verifique o e-mail e tente novamente.',
+    });
+
+    await setCurrentStep(conversation, 'ASK_VERIFICATION_CODE', 'OPEN');
+    return;
+  }
+
+  const user = await User.findByPk(conversation.linkedUserId, {
+    attributes: ['id', 'name', 'email', 'phone', 'cargoDescritivo', 'avatarUrl'],
+  });
+
+  await conversation.update({
+    verificationCode: null,
+    verificationExpiresAt: null,
+    pendingIdentifier: null,
+    contactName: user?.name || conversation.contactName,
+    metadata: {
+      ...(conversation.metadata || {}),
+      userId: user?.id || conversation.linkedUserId,
+      userName: user?.name,
+      userEmail: user?.email,
+      userPhone: user?.phone,
+      userCargo: user?.cargoDescritivo,
+      avatarUrl: user?.avatarUrl,
+      phoneValidation: 'LINKED_BY_CODE',
+      linkedAt: new Date().toISOString(),
+    },
+  });
+
+  await sendMessageAndSave({
+    conversation,
+    text: '✅ Validação concluída com sucesso.\n\nDigite o número da nota fiscal.',
+  });
+
+  await setCurrentStep(conversation, 'ASK_NOTE', 'WAITING_NOTE');
+}
+
+async function ensureConversationIsLinked(conversation, phone) {
+  if (conversation.linkedUserId) return true;
+
+  if (!isLidChat(conversation.providerChatId)) {
+    const user = await findUserByWhatsappPhone(phone);
+
+    if (user) {
+      await conversation.update({
+        linkedUserId: user.id,
+        contactName: user.name || conversation.contactName,
+        metadata: {
+          ...(conversation.metadata || {}),
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          userPhone: user.phone,
+          userCargo: user.cargoDescritivo,
+          avatarUrl: user.avatarUrl,
+          phoneValidation: 'REGISTERED_PHONE',
+          linkedAt: new Date().toISOString(),
+        },
+      });
+
+      conversation.linkedUserId = user.id;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function runBotFlow({ conversation, text, phone }) {
   const step = getCurrentStep(conversation);
   const normalized = normalizeText(text);
 
   console.log('🤖 BOT FLOW STEP:', step);
   console.log('🤖 BOT FLOW TEXT:', text);
+
+  if (step === 'ASK_IDENTITY') {
+    await handleIdentityStep(conversation, text);
+    return;
+  }
+
+  if (step === 'ASK_VERIFICATION_CODE') {
+    await handleVerificationCodeStep(conversation, text);
+    return;
+  }
+
+  const isLinked = await ensureConversationIsLinked(conversation, phone);
+
+  if (!isLinked && isLidChat(conversation.providerChatId)) {
+    await startIdentityFlow(conversation);
+    return;
+  }
+
+  if (!isLinked) {
+    await sendMessageAndSave({
+      conversation,
+      text:
+        '⚠️ Número não cadastrado.\n\n' +
+        'Não identificamos seu telefone na base de usuários.\n\n' +
+        'Para utilizar o atendimento via WhatsApp, solicite o cadastro do seu número com a equipe responsável.',
+    });
+
+    await closeConversation(conversation);
+    return;
+  }
 
   if (step === 'INIT' || step === 'GREETING') {
     await sendMessageAndSave({
@@ -367,7 +622,7 @@ async function runBotFlow({ conversation, text }) {
       text: 'Olá! Deseja rastrear um pedido? Responda Sim ou Não.',
     });
 
-    await setCurrentStep(conversation, 'ASK_TRACKING');
+    await setCurrentStep(conversation, 'ASK_TRACKING', 'OPEN');
     return;
   }
 
@@ -378,7 +633,7 @@ async function runBotFlow({ conversation, text }) {
         text: 'Perfeito. Digite o número da nota fiscal.',
       });
 
-      await setCurrentStep(conversation, 'ASK_NOTE');
+      await setCurrentStep(conversation, 'ASK_NOTE', 'WAITING_NOTE');
       return;
     }
 
@@ -388,7 +643,7 @@ async function runBotFlow({ conversation, text }) {
         text: 'Tudo bem. Quando precisar, é só me chamar novamente.',
       });
 
-      await clearCurrentStep(conversation);
+      await closeConversation(conversation);
       return;
     }
 
@@ -396,6 +651,8 @@ async function runBotFlow({ conversation, text }) {
       conversation,
       text: 'Não entendi. Responda apenas Sim ou Não.',
     });
+
+    await setCurrentStep(conversation, 'ASK_TRACKING', 'OPEN');
     return;
   }
 
@@ -407,6 +664,8 @@ async function runBotFlow({ conversation, text }) {
         conversation,
         text: 'Por favor, envie apenas o número da nota fiscal.',
       });
+
+      await setCurrentStep(conversation, 'ASK_NOTE', 'WAITING_NOTE');
       return;
     }
 
@@ -417,6 +676,8 @@ async function runBotFlow({ conversation, text }) {
         conversation,
         text: 'Não localizei essa nota no momento. Verifique o número enviado e tente novamente.',
       });
+
+      await setCurrentStep(conversation, 'ASK_NOTE', 'WAITING_NOTE');
       return;
     }
 
@@ -430,7 +691,7 @@ async function runBotFlow({ conversation, text }) {
       text: formatBotDeliveryMessage(result),
     });
 
-    await setCurrentStep(conversation, 'ASK_ANOTHER_NOTE');
+    await setCurrentStep(conversation, 'ASK_ANOTHER_NOTE', 'WAITING_CONFIRMATION');
     return;
   }
 
@@ -441,7 +702,7 @@ async function runBotFlow({ conversation, text }) {
         text: 'Perfeito. Digite o número da próxima nota fiscal.',
       });
 
-      await setCurrentStep(conversation, 'ASK_NOTE');
+      await setCurrentStep(conversation, 'ASK_NOTE', 'WAITING_NOTE');
       return;
     }
 
@@ -451,7 +712,7 @@ async function runBotFlow({ conversation, text }) {
         text: 'Atendimento encerrado. Quando quiser, posso ajudar novamente.',
       });
 
-      await clearCurrentStep(conversation);
+      await closeConversation(conversation);
       return;
     }
 
@@ -459,17 +720,17 @@ async function runBotFlow({ conversation, text }) {
       conversation,
       text: 'Responda Sim para consultar outra nota ou Não para encerrar.',
     });
+
+    await setCurrentStep(conversation, 'ASK_ANOTHER_NOTE', 'WAITING_CONFIRMATION');
     return;
   }
-
-  await clearCurrentStep(conversation);
 
   await sendMessageAndSave({
     conversation,
     text: 'Olá! Deseja rastrear um pedido? Responda Sim ou Não.',
   });
 
-  await setCurrentStep(conversation, 'ASK_TRACKING');
+  await setCurrentStep(conversation, 'ASK_TRACKING', 'OPEN');
 }
 
 async function webhook(req, res) {
@@ -488,51 +749,26 @@ async function webhook(req, res) {
     const interactionDate = new Date(parsed.timestamp * 1000);
 
     if (isGroupChat(parsed.from)) {
-      console.log('🚫 Ignorado grupo:', parsed.from);
-      return res.status(200).json({
-        ok: true,
-        ignored: true,
-        reason: 'group_message',
-      });
+      return res.status(200).json({ ok: true, ignored: true, reason: 'group_message' });
     }
 
     if (isBroadcastChat(parsed.from)) {
-      return res.status(200).json({
-        ok: true,
-        ignored: true,
-        reason: 'broadcast_message',
-      });
+      return res.status(200).json({ ok: true, ignored: true, reason: 'broadcast_message' });
     }
 
     if (!phone) {
-      return res.status(200).json({
-        ok: true,
-        ignored: true,
-        reason: 'phone_not_found',
-      });
+      return res.status(200).json({ ok: true, ignored: true, reason: 'phone_not_found' });
     }
 
     if (parsed.fromMe) {
-      return res.status(200).json({
-        ok: true,
-        ignored: true,
-        reason: 'from_me',
-      });
+      return res.status(200).json({ ok: true, ignored: true, reason: 'from_me' });
     }
 
     if (!text) {
-      return res.status(200).json({
-        ok: true,
-        ignored: true,
-        reason: 'empty_text',
-      });
+      return res.status(200).json({ ok: true, ignored: true, reason: 'empty_text' });
     }
 
-    if (
-      parsed.event &&
-      parsed.event !== 'message' &&
-      parsed.event !== 'message.any'
-    ) {
+    if (parsed.event && parsed.event !== 'message' && parsed.event !== 'message.any') {
       return res.status(200).json({
         ok: true,
         ignored: true,
@@ -542,22 +778,20 @@ async function webhook(req, res) {
     }
 
     let conversation = await WhatsappConversation.findOne({
-      where: { phone },
+      where: { providerChatId: parsed.from },
     });
 
-    let registeredUser = null;
-
-    try {
-      registeredUser = await findUserByWhatsappPhone(phone);
-    } catch (error) {
-      console.error('WHATSAPP USER LOOKUP ERROR:', error.message);
+    if (!conversation) {
+      conversation = await WhatsappConversation.findOne({
+        where: { phone },
+      });
     }
 
     if (!conversation) {
       conversation = await WhatsappConversation.create({
         phone,
         providerChatId: parsed.from,
-        contactName: registeredUser?.name || phone,
+        contactName: phone,
         status: 'OPEN',
         provider: 'waha',
         lastMessage: text,
@@ -566,44 +800,23 @@ async function webhook(req, res) {
         lastInteractionAt: interactionDate,
         currentFlowCode: 'DEFAULT_TRACKING',
         currentStepCode: 'INIT',
-        metadata: registeredUser
-          ? {
-              userId: registeredUser.id,
-              userName: registeredUser.name,
-              userEmail: registeredUser.email,
-              userCargo: registeredUser.cargoDescritivo,
-              phoneValidation: 'REGISTERED',
-              phoneValidatedAt: new Date().toISOString(),
-            }
-          : {
-              phoneValidation: 'NOT_REGISTERED',
-              phoneValidatedAt: new Date().toISOString(),
-            },
+        metadata: {
+          phoneValidation: 'NOT_VALIDATED',
+          phoneValidatedAt: new Date().toISOString(),
+        },
       });
     } else {
+      const nextStatus =
+        conversation.status === 'CLOSED'
+          ? 'OPEN'
+          : conversation.status || 'OPEN';
+
       await conversation.update({
         providerChatId: parsed.from,
-        contactName: registeredUser?.name || conversation.contactName || phone,
         lastMessage: text,
-        status: 'OPEN',
+        status: nextStatus,
         lastUserMessageAt: interactionDate,
         lastInteractionAt: interactionDate,
-        metadata: {
-          ...(conversation.metadata || {}),
-          ...(registeredUser
-            ? {
-                userId: registeredUser.id,
-                userName: registeredUser.name,
-                userEmail: registeredUser.email,
-                userCargo: registeredUser.cargoDescritivo,
-                phoneValidation: 'REGISTERED',
-                phoneValidatedAt: new Date().toISOString(),
-              }
-            : {
-                phoneValidation: 'NOT_REGISTERED',
-                phoneValidatedAt: new Date().toISOString(),
-              }),
-        },
       });
 
       await conversation.reload();
@@ -618,8 +831,6 @@ async function webhook(req, res) {
       });
 
       if (alreadyExists) {
-        console.log('⚠️ MENSAGEM DUPLICADA, NÃO VOU RESPONDER:', parsed.messageId);
-
         return res.status(200).json({
           ok: true,
           conversationId: conversation.id,
@@ -648,30 +859,10 @@ async function webhook(req, res) {
 
     await conversation.reload();
 
-    // Caso queira obrigar cadastro, descomente este bloco.
-    // Hoje deixei sem bloquear para não travar o fluxo com @lid.
-    /*
-    if (!registeredUser) {
-      await sendMessageAndSave({
-        conversation,
-        text: buildUnregisteredPhoneMessage(),
-      });
-
-      await conversation.reload();
-
-      return res.status(200).json({
-        ok: true,
-        conversationId: conversation.id,
-        duplicated: false,
-        blocked: true,
-        reason: 'phone_not_registered_in_users',
-      });
-    }
-    */
-
     await runBotFlow({
       conversation,
       text,
+      phone,
     });
 
     await conversation.reload();
@@ -681,6 +872,7 @@ async function webhook(req, res) {
       conversationId: conversation.id,
       duplicated: false,
       currentStepCode: conversation.currentStepCode,
+      status: conversation.status,
     });
   } catch (error) {
     console.error('WHATSAPP WEBHOOK ERROR:', error);
@@ -693,38 +885,33 @@ async function webhook(req, res) {
 async function send(req, res) {
   try {
     const conversationId = req.params?.id || req.body?.conversationId;
-    const text = safeString(req.body?.message || req.body?.text);
+    const rawText = safeString(req.body?.message || req.body?.text);
+    const senderName = safeString(req.body?.senderName);
+
+    const text = senderName ? `*${senderName}:*\n${rawText}` : rawText;
 
     if (!conversationId) {
-      return res.status(400).json({
-        error: 'ID da conversa é obrigatório.',
-      });
+      return res.status(400).json({ error: 'ID da conversa é obrigatório.' });
     }
 
-    if (!text) {
-      return res.status(400).json({
-        error: 'Mensagem obrigatória.',
-      });
+    if (!rawText) {
+      return res.status(400).json({ error: 'Mensagem obrigatória.' });
     }
 
     const conversation = await WhatsappConversation.findByPk(conversationId);
 
     if (!conversation) {
-      return res.status(404).json({
-        error: 'Conversa não encontrada.',
-      });
+      return res.status(404).json({ error: 'Conversa não encontrada.' });
     }
 
     if (isGroupChat(conversation.providerChatId)) {
-      return res.status(400).json({
-        error: 'Envio para grupos não é permitido.',
-      });
+      return res.status(400).json({ error: 'Envio para grupos não é permitido.' });
     }
 
     const result = await sendMessageAndSave({
       conversation,
       text,
-      senderType: 'HUMAN',
+      senderType: 'AGENT',
     });
 
     await conversation.reload();

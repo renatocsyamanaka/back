@@ -55,6 +55,22 @@ WhatsappConversation.init(
       allowNull: true,
       defaultValue: 'GREETING',
     },
+    linkedUserId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    verificationCode: {
+      type: DataTypes.STRING(10),
+      allowNull: true,
+    },
+    verificationExpiresAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    pendingIdentifier: {
+      type: DataTypes.STRING(150),
+      allowNull: true,
+    },
     protocol: {
       type: DataTypes.STRING(80),
       allowNull: true,
