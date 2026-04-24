@@ -512,7 +512,39 @@ async function webhook(req, res) {
   try {
     const parsed = extractIncomingMessage(req.body);
 
-    const phone = normalizePhone(parsed.from);
+        let phone = normalizePhone(parsed.from);
+
+        const possiblePhones = [
+        parsed.raw?.payload?.sender?.phone,
+        parsed.raw?.payload?.sender?.id,
+        parsed.raw?.payload?.contact?.phone,
+        parsed.raw?.payload?.contact?.id,
+        parsed.raw?.payload?.author,
+        parsed.raw?.payload?.participant,
+        parsed.raw?.payload?.from,
+        parsed.from,
+        ];
+
+        for (const item of possiblePhones) {
+        const candidate = normalizePhone(item);
+
+        // telefone BR normalmente tem 10, 11, 12 ou 13 dígitos com 55
+        if (candidate && candidate.length >= 10 && candidate.length <= 13) {
+            phone = candidate;
+            break;
+        }
+        }
+
+        console.log('📲 FROM RAW:', parsed.from);
+        console.log('📲 PHONE FINAL:', phone);
+
+        if (!phone || phone.length > 13) {
+        return res.status(200).json({
+            ok: true,
+            ignored: true,
+            reason: 'real_phone_not_found_lid_received',
+        });
+        }
     const text = safeString(parsed.text);
     const interactionDate = new Date(parsed.timestamp * 1000);
 
