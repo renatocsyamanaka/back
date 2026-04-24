@@ -41,31 +41,21 @@ async function findUserByWhatsappPhone(phone) {
 
   if (!incomingVariants.length) return null;
 
-  // Primeiro tenta buscar pelo formato já padronizado.
-  let user = await User.findOne({
-    where: {
-      phone: {
-        [Op.in]: incomingVariants,
-      },
-      isActive: true,
-    },
-    attributes: ['id', 'name', 'email', 'phone', 'cargoDescritivo', 'isActive'],
-  });
-
-  if (user) return user;
-
-  // Fallback para telefones antigos com máscara: (11) 99999-9999, 11-99999-9999 etc.
-  const usersWithPhone = await User.findAll({
+  const users = await User.findAll({
     where: {
       phone: {
         [Op.ne]: null,
       },
       isActive: true,
     },
-    attributes: ['id', 'name', 'email', 'phone', 'cargoDescritivo', 'isActive'],
+    attributes: ['id', 'name', 'email', 'phone'],
   });
 
-  return usersWithPhone.find((item) => isSamePhone(item.phone, phone)) || null;
+  return users.find((user) =>
+    incomingVariants.some((variant) =>
+      normalizePhone(user.phone) === normalizePhone(variant)
+    )
+  ) || null;
 }
 
 function buildUnregisteredPhoneMessage() {
