@@ -13,7 +13,9 @@ RUN apk add --no-cache \
   giflib-dev \
   librsvg-dev \
   pixman-dev \
-  pkgconfig
+  pkgconfig \
+  fontconfig \
+  ttf-dejavu
 
 COPY package*.json ./
 

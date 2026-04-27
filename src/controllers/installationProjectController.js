@@ -758,8 +758,8 @@ async updateDailyReportSettings(req, res) {
     dailyReportColorDone: value.dailyReportColorDone || '#00c853',
     dailyReportColorPending: value.dailyReportColorPending || '#2f7dbd',
     dailyReportHeaderColor: value.dailyReportHeaderColor || '#2f7dbd',
-    dailyReportClientLogoUrl: value.dailyReportClientLogoUrl || null,
-    dailyReportOmnilinkLogoUrl: value.dailyReportOmnilinkLogoUrl || null,
+    dailyReportClientLogoUrl: values.dailyReportClientLogoUrl || null,
+    dailyReportOmnilinkLogoUrl: values.dailyReportOmnilinkLogoUrl || DEFAULT_OMNILINK_LOGO,
 
     updatedById: req.user.id,
   });

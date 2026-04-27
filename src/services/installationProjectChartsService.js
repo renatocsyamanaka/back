@@ -128,7 +128,7 @@ async function generateCharts(project, progressList = [], options = {}) {
       labels: [productName],
       datasets: [
         {
-          label: 'Concluído',
+          label: 'Concluido',
           data: [done],
           backgroundColor: colorDone,
           borderWidth: 0,
