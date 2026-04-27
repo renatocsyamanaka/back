@@ -1,9 +1,22 @@
-# backend/Dockerfile
 FROM node:20-alpine
 
 WORKDIR /app
 
+# 🔥 DEPENDÊNCIAS DO CANVAS (OBRIGATÓRIO)
+RUN apk add --no-cache \
+  python3 \
+  make \
+  g++ \
+  cairo-dev \
+  pango-dev \
+  jpeg-dev \
+  giflib-dev \
+  librsvg-dev \
+  pixman-dev \
+  pkgconfig
+
 COPY package*.json ./
+
 RUN npm ci --omit=dev
 
 COPY . .
