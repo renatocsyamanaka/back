@@ -5,9 +5,12 @@ const chartJSNodeCanvas = new ChartJSNodeCanvas({
   width: 620,
   height: 300,
   backgroundColour: '#eaf4ff',
-  chartCallback: (ChartJS) => {
-    ChartJS.register(ChartDataLabels);
-  },
+    chartCallback: (ChartJS) => {
+      ChartJS.register(ChartDataLabels);
+
+      ChartJS.defaults.font.family = 'DejaVu Sans';
+      ChartJS.defaults.color = '#333333';
+    },
 });
 
 function normalizeProject(project) {
@@ -62,7 +65,7 @@ async function generateCharts(project, progressList = [], options = {}) {
   const pieBuffer = await chartJSNodeCanvas.renderToBuffer({
     type: 'pie',
     data: {
-      labels: ['Concluído', 'Pendente'],
+      labels: ['Concluido', 'Pendente'],
       datasets: [
         {
           data: [done, pending],
@@ -84,7 +87,7 @@ async function generateCharts(project, progressList = [], options = {}) {
       plugins: {
         title: {
           display: true,
-          text: `Percentual de Conclusão ${p?.requestedCity || ''}`.trim(),
+          text: 'Percentual de Conclusao',
           color: commonFontColor,
           font: {
             size: 16,
