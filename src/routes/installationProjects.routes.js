@@ -22,7 +22,18 @@ const logoStorage = multer.diskStorage({
   },
 });
 
-const uploadLogo = multer({ storage: logoStorage });
+const uploadLogo = multer({
+  storage: logoStorage,
+  fileFilter: (req, file, cb) => {
+    const allowed = ['image/png', 'image/jpeg', 'image/jpg'];
+
+    if (!allowed.includes(file.mimetype)) {
+      return cb(new Error('Envie uma logo em PNG ou JPG. SVG não funciona bem em e-mail.'));
+    }
+
+    cb(null, true);
+  },
+});
 
 /**
  * @swagger
