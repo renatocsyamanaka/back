@@ -460,13 +460,9 @@ const uploadLogo = multer({
  *       403: { description: "Permissão insuficiente" }
  */
 
-router.post(
-  '/:id/upload-daily-report-logo',
-  auth(),
-  requireLevel(2),
-  uploadLogo.single('file'),
-  ctrl.uploadDailyReportLogo
-);
+router.post('/:id/upload-daily-report-logo',  auth(),  requireLevel(2),  uploadLogo.single('file'),  ctrl.uploadDailyReportLogo);
+router.delete('/:id/delete-daily-report-logo',  auth(),  requireLevel(2),  ctrl.deleteDailyReportLogo);
+
 
 // ✅ Analista+ (2)
 router.get('/', auth(), requireLevel(2), ctrl.list);
