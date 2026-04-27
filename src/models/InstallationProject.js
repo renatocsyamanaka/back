@@ -51,34 +51,66 @@ InstallationProject.init(
       allowNull: true,
       defaultValue: [],
     },
-  dailyReportEnabled: {
-    type: DataTypes.BOOLEAN,
-    allowNull: false,
-    defaultValue: false,
-  },
+    dailyReportEnabled: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    dailyReportType: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: 'simple',
+    },
 
-  dailyReportSendToClient: {
-    type: DataTypes.BOOLEAN,
-    allowNull: false,
-    defaultValue: false,
-  },
+    dailyReportColorDone: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: '#b7b2b2',
+    },
 
-  dailyReportInternalEmails: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: [],
-  },
+    dailyReportColorPending: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: '#a8d08d',
+    },
 
-  dailyReportClientEmails: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: [],
-  },
+    dailyReportHeaderColor: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: '#1f5f8f',
+    },
 
-  dailyReportLastSentAt: {
-    type: DataTypes.DATE,
-    allowNull: true,
-  },
+    dailyReportClientLogoUrl: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    dailyReportOmnilinkLogoUrl: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    dailyReportSendToClient: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+
+    dailyReportInternalEmails: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      defaultValue: [],
+    },
+
+    dailyReportClientEmails: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      defaultValue: [],
+    },
+
+    dailyReportLastSentAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
     contactPhone: {
       type: DataTypes.STRING,
       allowNull: true,

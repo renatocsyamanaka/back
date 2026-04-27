@@ -1,288 +1,247 @@
-const dayjs = require('dayjs');
-const { sendMail } = require('./mailer');
+const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
+const ChartDataLabels = require('chartjs-plugin-datalabels');
 
-const {
-  InstallationProject,
-  InstallationProjectProgress,
-  InstallationProjectProgressVehicle,
-  Client,
-  User,
-} = require('../models');
+const chartJSNodeCanvas = new ChartJSNodeCanvas({
+  width: 620,
+  height: 300,
+  backgroundColour: '#eaf4ff',
+  chartCallback: (ChartJS) => {
+    ChartJS.register(ChartDataLabels);
+  },
+});
 
-function fmtDate(date) {
-  if (!date) return '-';
-  return dayjs(date).format('DD/MM/YYYY');
+function normalizeProject(project) {
+  return project?.toJSON ? project.toJSON() : project;
 }
 
-function normalizeEmails(input) {
-  if (!input) return [];
+function getMainProductName(project) {
+  const p = normalizeProject(project);
 
-  let arr = input;
-
-  if (typeof input === 'string') {
-    try {
-      const parsed = JSON.parse(input);
-      arr = parsed;
-    } catch {
-      arr = input.split(/[;,]/);
-    }
-  }
-
-  if (!Array.isArray(arr)) {
-    arr = [arr];
-  }
-
-  return [
-    ...new Set(
-      arr
-        .map((e) => String(e || '').trim().toLowerCase())
-        .filter((e) => e && e.includes('@'))
-    ),
-  ];
-}
-
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function hasMovement(progressList) {
-  return progressList.some((p) => {
-    const qtd = Number(p.trucksDoneToday || p.completedInstallations || 0);
-    const vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
-
-    return qtd > 0 || vehicles.length > 0;
-  });
-}
-
-function buildDailyReportHtml(project, progressList, targetDate) {
-  const installedToday = progressList.reduce(
-    (acc, p) => acc + Number(p.trucksDoneToday || p.completedInstallations || 0),
-    0
+  return (
+    p?.items?.[0]?.equipmentName ||
+    p?.items?.[0]?.name ||
+    p?.productName ||
+    p?.product ||
+    'Produto'
   );
+}
 
-  const total = Number(project.trucksTotal || project.equipmentsTotal || 0);
-  const done = Number(project.trucksDone || 0);
+function getChartColors(project, options = {}) {
+  const p = normalizeProject(project);
+
+  return {
+    colorDone:
+      options.colorDone ||
+      p?.dailyReportColorDone ||
+      '#b7b2b2',
+
+    colorPending:
+      options.colorPending ||
+      p?.dailyReportColorPending ||
+      '#a8d08d',
+
+    background:
+      options.background ||
+      p?.dailyReportChartBackground ||
+      '#eaf4ff',
+  };
+}
+
+async function generateCharts(project, progressList = [], options = {}) {
+  const p = normalizeProject(project);
+
+  const total = Number(p?.trucksTotal || p?.equipmentsTotal || 0);
+  const done = Number(p?.trucksDone || 0);
   const pending = Math.max(total - done, 0);
-  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
 
-  const firstDate = project.startAt || project.startPlannedAt || targetDate;
-  const lastDate = targetDate;
-  const barWidth = Math.max(0, Math.min(percent, 100));
+  const productName = getMainProductName(p);
+  const { colorDone, colorPending, background } = getChartColors(p, options);
 
-  const vehicles = progressList.flatMap((p) =>
-    (p.vehicles || []).map((v) => ({
-      date: p.date,
-      plate: v.plate,
-      serial: v.serial,
-      product: project.items?.[0]?.equipmentName || project.items?.[0]?.name || '-',
-      status: 'Concluído',
-      unidade: project.requestedCity || project.client?.city || project.requestedLocationText || '-',
-      empresa: project.client?.name || project.title,
-    }))
-  );
+  const commonFontColor = '#333333';
 
-  const rows = vehicles
-    .map(
-      (v) => `
-        <tr>
-          <td style="border:1px solid #cbd5e1;padding:7px;">${fmtDate(v.date)}</td>
-          <td style="border:1px solid #cbd5e1;padding:7px;">${escapeHtml(v.plate || '-')}</td>
-          <td style="border:1px solid #cbd5e1;padding:7px;">${escapeHtml(v.serial || '-')}</td>
-          <td style="border:1px solid #cbd5e1;padding:7px;">${escapeHtml(v.product || '-')}</td>
-          <td style="border:1px solid #cbd5e1;padding:7px;">Instalação</td>
-          <td style="border:1px solid #cbd5e1;padding:7px;">${escapeHtml(v.status)}</td>
-          <td style="border:1px solid #cbd5e1;padding:7px;">${escapeHtml(v.unidade)}</td>
-          <td style="border:1px solid #cbd5e1;padding:7px;">${escapeHtml(v.empresa)}</td>
-        </tr>
-      `
-    )
-    .join('');
-
-  return `
-  <!DOCTYPE html>
-  <html>
-    <body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#111827;">
-      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f1f5f9;border-collapse:collapse;">
-        <tr>
-          <td align="center" style="padding:20px;">
-            <table width="900" cellpadding="0" cellspacing="0" border="0" style="width:900px;background-color:#ffffff;border:1px solid #dbe3ef;border-collapse:collapse;">
-              <tr>
-                <td bgcolor="#2f7dbd" style="background-color:#2f7dbd;padding:22px;text-align:left;color:#ffffff;">
-                  <div style="font-size:22px;font-weight:bold;line-height:28px;">Relatório Diário de Instalação</div>
-                  <div style="font-size:14px;margin-top:6px;line-height:20px;">
-                    ${escapeHtml(project.title || '-')} ${project.af ? ` - AF ${escapeHtml(project.af)}` : ''}
-                  </div>
-                </td>
-              </tr>
-
-              <tr>
-                <td style="padding:18px;">
-                  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;text-align:center;">
-                    <tr>
-                      <td width="20%" style="border:1px solid #dbe3ef;padding:12px;">
-                        <div style="font-size:12px;color:#64748b;">Primeira Instalação</div>
-                        <div style="font-size:18px;font-weight:bold;">${fmtDate(firstDate)}</div>
-                      </td>
-                      <td width="20%" style="border:1px solid #dbe3ef;padding:12px;">
-                        <div style="font-size:12px;color:#64748b;">Total</div>
-                        <div style="font-size:24px;font-weight:bold;">${total}</div>
-                      </td>
-                      <td width="20%" style="border:1px solid #dbe3ef;padding:12px;">
-                        <div style="font-size:12px;color:#64748b;">Concluído</div>
-                        <div style="font-size:24px;font-weight:bold;color:#00c853;">${done}</div>
-                      </td>
-                      <td width="20%" style="border:1px solid #dbe3ef;padding:12px;">
-                        <div style="font-size:12px;color:#64748b;">Pendente</div>
-                        <div style="font-size:24px;font-weight:bold;color:#f97316;">${pending}</div>
-                      </td>
-                      <td width="20%" style="border:1px solid #dbe3ef;padding:12px;">
-                        <div style="font-size:12px;color:#64748b;">Última Instalação</div>
-                        <div style="font-size:18px;font-weight:bold;">${fmtDate(lastDate)}</div>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-
-              <tr>
-                <td style="padding:0 18px 18px 18px;">
-                  <div style="font-size:16px;font-weight:bold;margin-bottom:8px;">Percentual de Conclusão</div>
-
-                  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background-color:#e5e7eb;">
-                    <tr>
-                      <td width="${barWidth}%" bgcolor="#00c853" style="background-color:#00c853;height:24px;line-height:24px;text-align:center;color:#ffffff;font-size:13px;font-weight:bold;">
-                        ${percent}%
-                      </td>
-                      <td width="${100 - barWidth}%" style="height:24px;line-height:24px;font-size:1px;">&nbsp;</td>
-                    </tr>
-                  </table>
-
-                  <p style="font-size:14px;margin:12px 0 18px 0;line-height:20px;">
-                    <b>${done}</b> concluídos de <b>${total}</b> equipamentos.
-                    Hoje foram registrados <b>${installedToday}</b> equipamentos.
-                  </p>
-
-                  <div style="font-size:16px;font-weight:bold;margin-bottom:8px;">Equipamentos Instalados</div>
-
-                  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;font-size:12px;">
-                    <thead>
-                      <tr bgcolor="#e2e8f0" style="background-color:#e2e8f0;">
-                        <th style="border:1px solid #cbd5e1;padding:8px;text-align:left;">Data</th>
-                        <th style="border:1px solid #cbd5e1;padding:8px;text-align:left;">Placa</th>
-                        <th style="border:1px solid #cbd5e1;padding:8px;text-align:left;">Serial</th>
-                        <th style="border:1px solid #cbd5e1;padding:8px;text-align:left;">Produto</th>
-                        <th style="border:1px solid #cbd5e1;padding:8px;text-align:left;">Procedimento</th>
-                        <th style="border:1px solid #cbd5e1;padding:8px;text-align:left;">Status</th>
-                        <th style="border:1px solid #cbd5e1;padding:8px;text-align:left;">Unidade</th>
-                        <th style="border:1px solid #cbd5e1;padding:8px;text-align:left;">Empresa</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${
-                        rows ||
-                        `<tr><td colspan="8" style="border:1px solid #cbd5e1;text-align:center;padding:16px;">Nenhum equipamento detalhado no dia.</td></tr>`
-                      }
-                    </tbody>
-                  </table>
-                </td>
-              </tr>
-
-              <tr>
-                <td bgcolor="#f8fafc" style="background-color:#f8fafc;padding:14px 18px;font-size:12px;color:#64748b;">
-                  Mensagem automática - Portal de Supply Chain
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-      </table>
-    </body>
-  </html>
-  `;
-}
-
-async function sendDailyReport(projectId, options = {}) {
-  const targetDate = options.date || dayjs().format('YYYY-MM-DD');
-
-  const project = await InstallationProject.findByPk(projectId, {
-    include: [
-      { model: Client, as: 'client' },
-      { model: User, as: 'supervisor', attributes: ['id', 'name', 'email'] },
-      { association: 'items' },
-    ],
-  });
-
-  if (!project) {
-    throw new Error('Projeto não encontrado');
-  }
-
-  const progressList = await InstallationProjectProgress.findAll({
-    where: {
-      projectId,
-      date: targetDate,
+  const pieBuffer = await chartJSNodeCanvas.renderToBuffer({
+    type: 'pie',
+    data: {
+      labels: ['Concluído', 'Pendente'],
+      datasets: [
+        {
+          data: [done, pending],
+          backgroundColor: [colorDone, colorPending],
+          borderWidth: 0,
+        },
+      ],
     },
-    include: [{ model: InstallationProjectProgressVehicle, as: 'vehicles' }],
-    order: [['id', 'ASC']],
+    options: {
+      responsive: false,
+      layout: {
+        padding: {
+          top: 8,
+          right: 8,
+          bottom: 8,
+          left: 8,
+        },
+      },
+      plugins: {
+        title: {
+          display: true,
+          text: `Percentual de Conclusão ${p?.requestedCity || ''}`.trim(),
+          color: commonFontColor,
+          font: {
+            size: 16,
+            weight: 'bold',
+          },
+          padding: {
+            bottom: 8,
+          },
+        },
+        legend: {
+          position: 'top',
+          labels: {
+            color: commonFontColor,
+            boxWidth: 18,
+            font: {
+              size: 11,
+            },
+          },
+        },
+        datalabels: {
+          color: '#111111',
+          font: {
+            weight: 'bold',
+            size: 13,
+          },
+          formatter: (value) => {
+            const n = Number(value || 0);
+            return n > 0 ? n : '';
+          },
+        },
+      },
+    },
   });
 
-  if (!progressList.length || !hasMovement(progressList)) {
-    return {
-      sent: false,
-      ignored: true,
-      reason: 'Sem movimentação no dia',
-    };
-  }
-
-  const internalEmails = normalizeEmails(project.dailyReportInternalEmails);
-  const clientEmails = project.dailyReportSendToClient
-    ? normalizeEmails(project.dailyReportClientEmails || project.contactEmails || project.contactEmail)
-    : [];
-
-  const fallbackContactEmails = normalizeEmails(project.contactEmails || project.contactEmail);
-  const to = [...new Set([...internalEmails, ...clientEmails, ...fallbackContactEmails])];
-
-  if (!to.length) {
-    return {
-      sent: false,
-      ignored: true,
-      reason: 'Nenhum e-mail configurado',
-    };
-  }
-
-  const html = buildDailyReportHtml(project, progressList, targetDate);
-
-  const result = await sendMail({
-    to,
-    subject: `Relatório Diário de Instalação • ${project.title} • ${fmtDate(targetDate)}`,
-    html,
-    text: `Relatório Diário de Instalação - ${project.title} - ${fmtDate(targetDate)}`,
-    replyTo: process.env.MAIL_REPLY_TO || undefined,
-  });
-
-  await project.update({
-    dailyReportLastSentAt: new Date(),
+  const barBuffer = await chartJSNodeCanvas.renderToBuffer({
+    type: 'bar',
+    data: {
+      labels: [productName],
+      datasets: [
+        {
+          label: 'Concluído',
+          data: [done],
+          backgroundColor: colorDone,
+          borderWidth: 0,
+          borderRadius: 4,
+          barPercentage: 0.8,
+          categoryPercentage: 0.7,
+        },
+        {
+          label: 'Pendente',
+          data: [pending],
+          backgroundColor: colorPending,
+          borderWidth: 0,
+          borderRadius: 4,
+          barPercentage: 0.8,
+          categoryPercentage: 0.7,
+        },
+      ],
+    },
+    options: {
+      responsive: false,
+      layout: {
+        padding: {
+          top: 25,
+          right: 12,
+          bottom: 8,
+          left: 8,
+        },
+      },
+      plugins: {
+        title: {
+          display: true,
+          text: 'Equipamentos Instalados',
+          color: commonFontColor,
+          font: {
+            size: 16,
+            weight: 'bold',
+          },
+          padding: {
+            bottom: 12,
+          },
+        },
+        legend: {
+          position: 'bottom',
+          labels: {
+            color: commonFontColor,
+            boxWidth: 18,
+            font: {
+              size: 11,
+            },
+          },
+        },
+        datalabels: {
+          anchor: 'end',
+          align: 'top',
+          color: '#111111',
+          font: {
+            weight: 'bold',
+            size: 13,
+          },
+          formatter: (value) => {
+            const n = Number(value || 0);
+            return n > 0 ? n : '';
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: commonFontColor,
+            font: {
+              weight: 'bold',
+              size: 11,
+            },
+          },
+          grid: {
+            display: false,
+          },
+          border: {
+            display: true,
+            color: '#555555',
+          },
+        },
+        y: {
+          beginAtZero: true,
+          suggestedMax: Math.max(done, pending, 1) + 2,
+          ticks: {
+            color: '#666666',
+            precision: 0,
+            stepSize: 1,
+          },
+          grid: {
+            color: '#d9e2ea',
+          },
+          border: {
+            display: false,
+          },
+        },
+      },
+    },
   });
 
   return {
-    sent: true,
-    ignored: false,
-    to,
-    targetDate,
-    smtp: {
-      accepted: result?.accepted || [],
-      rejected: result?.rejected || [],
-      response: result?.response || null,
-      messageId: result?.messageId || null,
+    pie: pieBuffer,
+    bar: barBuffer,
+    meta: {
+      total,
+      done,
+      pending,
+      productName,
+      colorDone,
+      colorPending,
+      background,
     },
   };
 }
 
 module.exports = {
-  sendDailyReport,
-  buildDailyReportHtml,
+  generateCharts,
 };

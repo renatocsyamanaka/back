@@ -12,7 +12,16 @@ const transporter = nodemailer.createTransport({
   requireTLS: true,
 });
 
-async function sendMail({ to, cc, bcc, subject, html, text, replyTo }) {
+async function sendMail({
+  to,
+  cc,
+  bcc,
+  subject,
+  html,
+  text,
+  replyTo,
+  attachments,
+}) {
   const fromName = process.env.EMAIL_FROM_NAME || 'Omnilink';
   const from = `${fromName} <${process.env.EMAIL_USUARIO}>`;
 
@@ -25,6 +34,7 @@ async function sendMail({ to, cc, bcc, subject, html, text, replyTo }) {
     subject,
     html,
     text,
+    attachments: attachments || [],
   });
 }
 

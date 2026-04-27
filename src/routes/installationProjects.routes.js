@@ -4,6 +4,25 @@ const auth = require('../middleware/auth');
 const requireLevel = require('../middleware/rbac');
 const ctrl = require('../controllers/installationProjectController');
 const uploadExcel = require('../middleware/uploadExcel');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+const logoDir = path.join(__dirname, '../../uploads/daily-report-logos');
+
+if (!fs.existsSync(logoDir)) {
+  fs.mkdirSync(logoDir, { recursive: true });
+}
+
+const logoStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, logoDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '.png');
+    cb(null, `project-${req.params.id}-${Date.now()}${ext}`);
+  },
+});
+
+const uploadLogo = multer({ storage: logoStorage });
 
 /**
  * @swagger
@@ -430,6 +449,8 @@ const uploadExcel = require('../middleware/uploadExcel');
  *       403: { description: "Permissão insuficiente" }
  */
 
+router.post( '/:id/daily-report/logo',  auth(),  requireLevel(2),  uploadLogo.single('file'),  ctrl.uploadDailyReportLogo);
+
 // ✅ Analista+ (2)
 router.get('/', auth(), requireLevel(2), ctrl.list);
 router.post('/import-base', auth(), requireLevel(1), uploadExcel.single('file'), ctrl.importBaseExcel);
@@ -452,8 +473,7 @@ router.post('/:id/finish', auth(), requireLevel(2), ctrl.finish);
 router.post('/:id/items', auth(), requireLevel(2), ctrl.addItem);
 router.post('/:id/progress', auth(), requireLevel(2), ctrl.addProgress);
 router.patch('/:id/daily-report/settings',  auth(),  requireLevel(2),  ctrl.updateDailyReportSettings);
-
-router.post('/:id/daily-report/send-now',  auth(),  requireLevel(2),  ctrl.sendDailyReportNow);
+router.post(  '/:id/daily-report/send-now',  auth(),  requireLevel(2),  ctrl.sendDailyReportNow);
 
 // ✅ E-mails (Analista+)
 router.post('/:id/emails/start', auth(), requireLevel(2), ctrl.sendStartEmail);

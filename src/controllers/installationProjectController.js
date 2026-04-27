@@ -180,7 +180,6 @@ function normalizeExcelRowKeys(row = {}) {
     const hasMovement = progressToday.some(p => p.vehicles?.length > 0);
 
     if (!hasMovement) {
-      console.log(`[EMAIL] Sem movimentação hoje - NÃO enviado`);
       return;
     }
 
@@ -521,15 +520,6 @@ const progressSchema = Joi.object({
     .required(),
 }).options({ abortEarly: false, stripUnknown: true });
 
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
 function buildCompleteDailyEmailHtml(project, progressList, targetDate) {
   const p = project.toJSON ? project.toJSON() : project;
 
@@ -537,7 +527,11 @@ function buildCompleteDailyEmailHtml(project, progressList, targetDate) {
   const done = Number(p.trucksDone || 0);
   const pending = Math.max(total - done, 0);
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
-  const barWidth = Math.max(0, Math.min(percent, 100));
+
+  const headerColor = p.dailyReportHeaderColor || '#2f7dbd';
+  const clientLogo = p.dailyReportClientLogoUrl || '';
+  const omnilinkLogo =
+  p.dailyReportOmnilinkLogoUrl || 'https://app.projetos-rc.online/logo_branca.png';
 
   const allVehicles = progressList.flatMap((progress) => {
     const date = progress.date;
@@ -547,7 +541,7 @@ function buildCompleteDailyEmailHtml(project, progressList, targetDate) {
       date,
       plate: v.plate || '-',
       serial: v.serial || '-',
-      product: p.items?.[0]?.equipmentName || p.items?.[0]?.name || '-',
+      product: p.items?.[0]?.equipmentName || '-',
       procedure: 'Instalação',
       status: 'Concluído',
       unit: p.requestedCity || p.requestedLocationText || '-',
@@ -555,104 +549,129 @@ function buildCompleteDailyEmailHtml(project, progressList, targetDate) {
     }));
   });
 
-  const rows = allVehicles.length
-    ? allVehicles.map((v) => `
-      <tr>
-        <td style="border:1px solid #cbd5e1;padding:7px;">${dayjs(v.date).format('DD/MM/YYYY')}</td>
-        <td style="border:1px solid #cbd5e1;padding:7px;">${escapeHtml(v.plate)}</td>
-        <td style="border:1px solid #cbd5e1;padding:7px;">${escapeHtml(v.serial)}</td>
-        <td style="border:1px solid #cbd5e1;padding:7px;">${escapeHtml(v.product)}</td>
-        <td style="border:1px solid #cbd5e1;padding:7px;">${escapeHtml(v.procedure)}</td>
-        <td style="border:1px solid #cbd5e1;padding:7px;">${escapeHtml(v.status)}</td>
-        <td style="border:1px solid #cbd5e1;padding:7px;">${escapeHtml(v.unit)}</td>
-        <td style="border:1px solid #cbd5e1;padding:7px;">${escapeHtml(v.company)}</td>
-      </tr>
-    `).join('')
-    : `<tr><td colspan="8" style="border:1px solid #cbd5e1;text-align:center;padding:16px;">Nenhum equipamento detalhado.</td></tr>`;
+  const rows = allVehicles.map((v) => `
+    <tr>
+      <td>${dayjs(v.date).format('DD/MM/YYYY')}</td>
+      <td>${v.plate}</td>
+      <td>${v.serial}</td>
+      <td>${v.product}</td>
+      <td>${v.procedure}</td>
+      <td>${v.status}</td>
+      <td>${v.unit}</td>
+      <td>${v.company}</td>
+    </tr>
+  `).join('');
 
   return `
-  <!DOCTYPE html>
-  <html>
-    <body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#111827;">
-      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f1f5f9;border-collapse:collapse;">
-        <tr>
-          <td align="center" style="padding:20px;">
-            <table width="900" cellpadding="0" cellspacing="0" border="0" style="width:900px;background-color:#ffffff;border:1px solid #dbe3ef;border-collapse:collapse;">
-              <tr>
-                <td bgcolor="#2f7dbd" style="background-color:#2f7dbd;padding:22px;text-align:center;color:#ffffff;">
-                  <div style="font-size:22px;font-weight:bold;line-height:28px;">Relatório Completo de Instalação</div>
-                  <div style="font-size:14px;margin-top:6px;line-height:20px;">
-                    ${escapeHtml(p.title || '-')} ${p.af ? ` - AF ${escapeHtml(p.af)}` : ''}
-                  </div>
-                </td>
+    <div style="font-family:Arial,sans-serif;background:#eaf4ff;padding:20px;color:#111;">
+      <div style="max-width:1100px;margin:auto;background:#eaf4ff;border:1px solid #9fb3c8;border-radius:10px;overflow:hidden;">
+
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:${headerColor};border-collapse:collapse;">
+          <tr>
+            <td style="padding:14px 22px;text-align:left;width:33%;">
+              ${
+                clientLogo
+                  ? `<img src="${clientLogo}" style="max-height:58px;max-width:190px;object-fit:contain;" />`
+                  : `<strong style="font-size:22px;color:#fff;">${p.client?.name || p.title || ''}</strong>`
+              }
+            </td>
+
+            <td style="padding:14px 22px;text-align:center;width:34%;color:#fff;">
+              <h2 style="margin:0;font-size:22px;">Relatório Completo de Instalação</h2>
+              <p style="margin:6px 0 0;font-size:14px;">
+                ${p.title || '-'} ${p.af ? `• AF ${p.af}` : ''}
+              </p>
+            </td>
+
+            <td style="padding:14px 22px;text-align:right;width:33%;">
+              ${
+                omnilinkLogo
+                  ? `<img src="${omnilinkLogo}" style="max-height:58px;max-width:190px;object-fit:contain;" />`
+                  : `<strong style="font-size:22px;color:#fff;">Omnilink</strong>`
+              }
+            </td>
+          </tr>
+        </table>
+
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;text-align:center;background:#eaf4ff;">
+          <tr>
+            <td style="padding:15px;border-bottom:1px solid #9fb3c8;">
+              <strong style="font-size:20px;">${dayjs(p.startAt || p.startPlannedAt || targetDate).format('DD/MM/YYYY')}</strong><br/>
+              <span style="font-size:13px;">Primeira Instalação</span>
+            </td>
+
+            <td style="padding:15px;border-bottom:1px solid #9fb3c8;">
+              <strong style="font-size:24px;">📦 ${total}</strong><br/>
+              <span style="font-size:13px;">Total de Equipamentos</span>
+            </td>
+
+            <td style="padding:15px;border-bottom:1px solid #9fb3c8;">
+              <strong style="font-size:24px;color:#16a34a;">✅ ${done}</strong><br/>
+              <span style="font-size:13px;">Concluído</span>
+            </td>
+
+            <td style="padding:15px;border-bottom:1px solid #9fb3c8;">
+              <strong style="font-size:24px;color:#f97316;">🕘 ${pending}</strong><br/>
+              <span style="font-size:13px;">Aguardando Instalação</span>
+            </td>
+
+            <td style="padding:15px;border-bottom:1px solid #9fb3c8;">
+              <strong style="font-size:20px;">${dayjs(targetDate).format('DD/MM/YYYY')}</strong><br/>
+              <span style="font-size:13px;">Última Instalação</span>
+            </td>
+          </tr>
+        </table>
+
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#eaf4ff;">
+          <tr>
+            <td width="50%" style="padding:18px;border-right:1px solid #9fb3c8;text-align:center;">
+              <img src="cid:chart-pie" style="max-width:100%;height:auto;display:block;margin:auto;" />
+            </td>
+            <td width="50%" style="padding:18px;text-align:center;">
+              <img src="cid:chart-bar" style="max-width:100%;height:auto;display:block;margin:auto;" />
+            </td>
+          </tr>
+        </table>
+
+        <div style="padding:20px;background:#eaf4ff;">
+          <p style="font-size:14px;margin:0 0 16px;">
+            <b>${done}</b> concluídos de <b>${total}</b> equipamentos.
+            Percentual de conclusão: <b>${percent}%</b>.
+          </p>
+
+          <h3 style="margin:0 0 12px;">Equipamentos Instalados</h3>
+
+          <table width="100%" cellpadding="7" cellspacing="0" style="border-collapse:collapse;font-size:12px;border:1px solid #111;background:#eaf4ff;">
+            <thead>
+              <tr style="background:#dbeafe;">
+                <th>Data</th>
+                <th>Placa</th>
+                <th>Série</th>
+                <th>Produto</th>
+                <th>Procedimento</th>
+                <th>Status</th>
+                <th>Unidade</th>
+                <th>Empresa</th>
               </tr>
-              <tr>
-                <td style="padding:18px;">
-                  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;text-align:center;">
-                    <tr>
-                      <td width="25%" style="border:1px solid #dbe3ef;padding:12px;">
-                        <div style="font-size:12px;color:#64748b;">Total</div>
-                        <div style="font-size:24px;font-weight:bold;">${total}</div>
-                      </td>
-                      <td width="25%" style="border:1px solid #dbe3ef;padding:12px;">
-                        <div style="font-size:12px;color:#64748b;">Concluído</div>
-                        <div style="font-size:24px;font-weight:bold;color:#00c853;">${done}</div>
-                      </td>
-                      <td width="25%" style="border:1px solid #dbe3ef;padding:12px;">
-                        <div style="font-size:12px;color:#64748b;">Pendente</div>
-                        <div style="font-size:24px;font-weight:bold;color:#f97316;">${pending}</div>
-                      </td>
-                      <td width="25%" style="border:1px solid #dbe3ef;padding:12px;">
-                        <div style="font-size:12px;color:#64748b;">Conclusão</div>
-                        <div style="font-size:24px;font-weight:bold;">${percent}%</div>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding:0 18px 18px 18px;">
-                  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background-color:#e5e7eb;">
-                    <tr>
-                      <td width="${barWidth}%" bgcolor="#00c853" style="background-color:#00c853;height:24px;line-height:24px;text-align:center;color:#ffffff;font-size:13px;font-weight:bold;">
-                        ${percent}%
-                      </td>
-                      <td width="${100 - barWidth}%" style="height:24px;line-height:24px;font-size:1px;">&nbsp;</td>
-                    </tr>
-                  </table>
-                  <p style="font-size:14px;margin:12px 0 18px 0;line-height:20px;">
-                    <b>${done}</b> concluídos de <b>${total}</b> equipamentos.
-                    Relatório gerado em <b>${dayjs(targetDate).format('DD/MM/YYYY')}</b>.
-                  </p>
-                  <div style="font-size:16px;font-weight:bold;margin-bottom:8px;">Equipamentos Instalados</div>
-                  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;font-size:12px;">
-                    <thead>
-                      <tr bgcolor="#e2e8f0" style="background-color:#e2e8f0;">
-                        <th style="border:1px solid #cbd5e1;padding:8px;text-align:left;">Data</th>
-                        <th style="border:1px solid #cbd5e1;padding:8px;text-align:left;">Placa</th>
-                        <th style="border:1px solid #cbd5e1;padding:8px;text-align:left;">Série</th>
-                        <th style="border:1px solid #cbd5e1;padding:8px;text-align:left;">Produto</th>
-                        <th style="border:1px solid #cbd5e1;padding:8px;text-align:left;">Procedimento</th>
-                        <th style="border:1px solid #cbd5e1;padding:8px;text-align:left;">Status</th>
-                        <th style="border:1px solid #cbd5e1;padding:8px;text-align:left;">Unidade</th>
-                        <th style="border:1px solid #cbd5e1;padding:8px;text-align:left;">Empresa</th>
-                      </tr>
-                    </thead>
-                    <tbody>${rows}</tbody>
-                  </table>
-                </td>
-              </tr>
-              <tr>
-                <td bgcolor="#f8fafc" style="background-color:#f8fafc;padding:14px 18px;font-size:12px;color:#64748b;">
-                  Mensagem automática - Portal de Supply Chain
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-      </table>
-    </body>
-  </html>
+            </thead>
+            <tbody>
+              ${
+                rows ||
+                `<tr>
+                  <td colspan="8" style="text-align:center;padding:16px;">
+                    Nenhum equipamento detalhado.
+                  </td>
+                </tr>`
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div style="background:#f8fafc;padding:14px 20px;font-size:12px;color:#64748b;">
+          Mensagem automática • Portal de Supply Chain
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -712,28 +731,42 @@ module.exports = {
     return ok(res, enriched);
   },
 
-  async updateDailyReportSettings(req, res) {
-    const schema = Joi.object({
-      dailyReportEnabled: Joi.boolean().required(),
-      dailyReportSendToClient: Joi.boolean().required(),
-      dailyReportType: Joi.string().valid('simple', 'complete').default('simple'),
-    }).options({ abortEarly: false, stripUnknown: true });
+async updateDailyReportSettings(req, res) {
+  const schema = Joi.object({
+    dailyReportEnabled: Joi.boolean().required(),
+    dailyReportSendToClient: Joi.boolean().required(),
+    dailyReportType: Joi.string().valid('simple', 'complete').default('simple'),
 
-    const { error, value } = schema.validate(req.body || {});
-    if (error) return bad(res, error.message);
+    dailyReportColorDone: Joi.string().allow('', null),
+    dailyReportColorPending: Joi.string().allow('', null),
+    dailyReportHeaderColor: Joi.string().allow('', null),
+    dailyReportClientLogoUrl: Joi.string().allow('', null),
+    dailyReportOmnilinkLogoUrl: Joi.string().allow('', null),
+  }).options({ abortEarly: false, stripUnknown: true });
 
-    const project = await InstallationProject.findByPk(req.params.id);
-    if (!project) return notFound(res, 'Projeto não encontrado');
+  const { error, value } = schema.validate(req.body || {});
+  if (error) return bad(res, error.message);
 
-    await project.update({
-      dailyReportEnabled: value.dailyReportEnabled,
-      dailyReportSendToClient: value.dailyReportSendToClient,
-      dailyReportType: value.dailyReportType,
-      updatedById: req.user.id,
-    });
+  const project = await InstallationProject.findByPk(req.params.id);
+  if (!project) return notFound(res, 'Projeto não encontrado');
 
-    return ok(res, project);
-  },
+  await project.update({
+    dailyReportEnabled: value.dailyReportEnabled,
+    dailyReportSendToClient: value.dailyReportSendToClient,
+    dailyReportType: value.dailyReportType || 'simple',
+
+    dailyReportColorDone: value.dailyReportColorDone || '#00c853',
+    dailyReportColorPending: value.dailyReportColorPending || '#2f7dbd',
+    dailyReportHeaderColor: value.dailyReportHeaderColor || '#2f7dbd',
+    dailyReportClientLogoUrl: value.dailyReportClientLogoUrl || null,
+    dailyReportOmnilinkLogoUrl: value.dailyReportOmnilinkLogoUrl || null,
+
+    updatedById: req.user.id,
+  });
+
+  const full = await loadProjectWithDetails(project.id);
+  return ok(res, full);
+},
 
   async sendDailyReportNow(req, res) {
     try {
@@ -1910,7 +1943,7 @@ async importBaseExcel(req, res) {
 
     return ok(res, { sent: true, to });
   },
-  
+
   async uploadDailyReportLogo(req, res) {
     const project = await InstallationProject.findByPk(req.params.id);
     if (!project) return notFound(res, 'Projeto não encontrado');
@@ -1930,115 +1963,155 @@ async importBaseExcel(req, res) {
       dailyReportClientLogoUrl: logoUrl,
     });
   },
-  async sendDailyEmail(req, res) {
-    const schema = emailSendSchema.keys({
-      date: Joi.string().allow('', null),
-      reportType: Joi.string().valid('simple', 'complete').default('simple'),
-      sendAll: Joi.boolean().default(false),
+async sendDailyEmail(req, res) {
+  const schema = emailSendSchema.keys({
+    date: Joi.string().allow('', null),
+    reportType: Joi.string().valid('simple', 'complete').default('simple'),
+    sendAll: Joi.boolean().default(false),
+
+    dailyReportColorDone: Joi.string().allow('', null),
+    dailyReportColorPending: Joi.string().allow('', null),
+    dailyReportHeaderColor: Joi.string().allow('', null),
+    dailyReportClientLogoUrl: Joi.string().allow('', null),
+    dailyReportOmnilinkLogoUrl: Joi.string().allow('', null),
+  });
+
+  const { error, value } = schema.validate(req.body || {});
+  if (error) return bad(res, error.message);
+
+  try {
+    const project = await InstallationProject.findByPk(req.params.id, {
+      include: [
+        { model: Client, as: 'client', attributes: ['id', 'name'] },
+        { model: InstallationProjectItem, as: 'items', required: false },
+      ],
     });
 
-    const { error, value } = schema.validate(req.body || {});
-    if (error) return bad(res, error.message);
+    if (!project) return notFound(res, 'Projeto não encontrado');
 
-    try {
-      const project = await InstallationProject.findByPk(req.params.id, {
-        include: [
-          { model: Client, as: 'client', attributes: ['id', 'name'] },
-          { model: InstallationProjectItem, as: 'items', required: false },
-        ],
-      });
+    const to = normalizeEmailList(
+      value.emailTo || project.contactEmails || project.contactEmail
+    );
 
-      if (!project) return notFound(res, 'Projeto não encontrado');
+    if (!to.length) return bad(res, 'Projeto sem e-mail de contato');
 
-      const to = normalizeEmailList(value.emailTo || project.contactEmails || project.contactEmail);
-      if (!to.length) return bad(res, 'Projeto sem e-mail de contato');
+    const targetDate = value.date
+      ? String(value.date).slice(0, 10)
+      : dayjs().format('YYYY-MM-DD');
 
-      const targetDate = value.date
-        ? String(value.date).slice(0, 10)
-        : dayjs().format('YYYY-MM-DD');
-
-      if (!dayjs(targetDate, 'YYYY-MM-DD', true).isValid()) {
-        return bad(res, 'date inválido. Use YYYY-MM-DD');
-      }
-
-      const whereProgress = {
-        projectId: project.id,
-      };
-
-      if (!value.sendAll) {
-        whereProgress.date = targetDate;
-      }
-
-      const progressList = await InstallationProjectProgress.findAll({
-        where: whereProgress,
-        order: [['date', 'ASC'], ['id', 'ASC']],
-        include: [
-          { model: User, as: 'author', attributes: ['id', 'name'] },
-          { model: InstallationProjectProgressVehicle, as: 'vehicles' },
-        ],
-      });
-
-      const p = project.toJSON ? project.toJSON() : project;
-
-      let html;
-      let attachments = [];
-
-      if (value.reportType === 'complete') {
-        // Outlook/Exchange: sem imagens CID e sem anexos de gráficos.
-        // O layout completo agora usa apenas HTML em tabela + CSS inline.
-        html = buildCompleteDailyEmailHtml(p, progressList, targetDate);
-        attachments = [];
-      } else {
-        html = dailyEmailHtml(p, progressList, targetDate);
-        attachments = [];
-      }
-
-      const result = await sendMail({
-        to,
-        cc: value.emailCc?.length ? value.emailCc : undefined,
-        subject:
-          value.reportType === 'complete'
-            ? `Relatório Completo • ${project.title}${project.af ? ` • ${project.af}` : ''}`
-            : `Reporte Diário • ${project.title}${project.af ? ` • ${project.af}` : ''} • ${targetDate}`,
-        html,
-        text:
-          value.reportType === 'complete'
-            ? `Relatório Completo - ${project.title}`
-            : `Reporte Diário - ${project.title} - ${targetDate}`,
-        attachments,
-        replyTo: process.env.MAIL_REPLY_TO || undefined,
-      });
-
-      console.log('[sendDailyEmail] SMTP result:', {
-        accepted: result?.accepted,
-        rejected: result?.rejected,
-        response: result?.response,
-        messageId: result?.messageId,
-      });
-
-      await project.update({
-        dailyReportLastSentAt: new Date(),
-      });
-
-      return ok(res, {
-        sent: true,
-        to,
-        targetDate,
-        reportType: value.reportType,
-        sendAll: value.sendAll,
-        count: progressList.length,
-        smtp: {
-          accepted: result?.accepted || [],
-          rejected: result?.rejected || [],
-          response: result?.response || null,
-          messageId: result?.messageId || null,
-        },
-      });
-    } catch (err) {
-      console.error('sendDailyEmail error:', err);
-      return bad(res, err.message || 'Erro ao enviar reporte diário');
+    if (!dayjs(targetDate, 'YYYY-MM-DD', true).isValid()) {
+      return bad(res, 'date inválido. Use YYYY-MM-DD');
     }
-  },
+
+    const whereProgress = {
+      projectId: project.id,
+    };
+
+    if (!value.sendAll) {
+      whereProgress.date = targetDate;
+    }
+
+    const progressList = await InstallationProjectProgress.findAll({
+      where: whereProgress,
+      order: [['date', 'ASC'], ['id', 'ASC']],
+      include: [
+        { model: User, as: 'author', attributes: ['id', 'name'] },
+        { model: InstallationProjectProgressVehicle, as: 'vehicles' },
+      ],
+    });
+
+    const p = project.toJSON ? project.toJSON() : project;
+
+    p.dailyReportColorDone =
+      value.dailyReportColorDone || p.dailyReportColorDone || '#00c853';
+
+    p.dailyReportColorPending =
+      value.dailyReportColorPending || p.dailyReportColorPending || '#2f7dbd';
+
+    p.dailyReportHeaderColor =
+      value.dailyReportHeaderColor || p.dailyReportHeaderColor || '#2f7dbd';
+
+    p.dailyReportClientLogoUrl =
+      value.dailyReportClientLogoUrl || p.dailyReportClientLogoUrl || null;
+
+    p.dailyReportOmnilinkLogoUrl =
+      value.dailyReportOmnilinkLogoUrl ||
+      p.dailyReportOmnilinkLogoUrl ||
+      'https://app.projetos-rc.online/logo_branca.png';
+
+    let html;
+    let attachments = [];
+
+    if (value.reportType === 'complete') {
+      const charts = await generateCharts(p, progressList, {
+        colorDone: p.dailyReportColorDone,
+        colorPending: p.dailyReportColorPending,
+      });
+
+      html = buildCompleteDailyEmailHtml(p, progressList, targetDate);
+
+      attachments = [
+        {
+          filename: 'grafico-percentual.png',
+          content: charts.pie,
+          cid: 'chart-pie',
+          contentType: 'image/png',
+        },
+        {
+          filename: 'grafico-equipamentos.png',
+          content: charts.bar,
+          cid: 'chart-bar',
+          contentType: 'image/png',
+        },
+      ];
+    } else {
+      html = dailyEmailHtml(p, progressList, targetDate);
+    }
+
+
+    const result = await sendMail({
+      to,
+      cc: value.emailCc?.length ? value.emailCc : undefined,
+      subject:
+        value.reportType === 'complete'
+          ? `Relatório Completo • ${project.title}${project.af ? ` • ${project.af}` : ''}`
+          : `Reporte Diário • ${project.title}${project.af ? ` • ${project.af}` : ''} • ${targetDate}`,
+      html,
+      attachments,
+      replyTo: process.env.MAIL_REPLY_TO || undefined,
+    });
+
+
+    await project.update({
+      dailyReportLastSentAt: new Date(),
+    });
+
+    return ok(res, {
+      sent: true,
+      to,
+      targetDate,
+      reportType: value.reportType,
+      sendAll: value.sendAll,
+      count: progressList.length,
+      smtp: {
+        accepted: result?.accepted || [],
+        rejected: result?.rejected || [],
+        response: result?.response || null,
+        messageId: result?.messageId || null,
+      },
+    });
+  } catch (err) {
+    console.error('sendDailyEmail error:', {
+      message: err.message,
+      code: err.code,
+      command: err.command,
+      response: err.response,
+      stack: err.stack,
+    });
+
+    return bad(res, err.message || 'Erro ao enviar reporte diário');
+  }
+},
 
   async sendFinalEmail(req, res) {
     const schema = emailSendSchema.keys({
