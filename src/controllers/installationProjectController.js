@@ -5,6 +5,8 @@ const XLSX = require('xlsx');
 const sequelize = require('../db');
 const { sendDailyReport } = require('../services/installationProjectDailyReportService');
 const { generateCharts } = require('../services/installationProjectChartsService');
+const fs = require('fs');
+const path = require('path');
 
 const {
   InstallationProject,
@@ -1945,6 +1947,44 @@ async importBaseExcel(req, res) {
     return ok(res, { sent: true, to });
   },
 
+  async deleteDailyReportLogo(req, res) {
+    try {
+      const project = await InstallationProject.findByPk(req.params.id);
+      if (!project) return notFound(res, 'Projeto não encontrado');
+
+      const logoUrl = req.body?.logoUrl || project.dailyReportClientLogoUrl;
+
+      if (logoUrl) {
+        const filename = String(logoUrl).split('/').pop();
+
+        if (filename) {
+          const filePath = path.join(
+            __dirname,
+            '../../uploads/daily-report-logos',
+            filename
+          );
+
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+          }
+        }
+      }
+
+      await project.update({
+        dailyReportClientLogoUrl: null,
+        updatedById: req.user.id,
+      });
+
+      return ok(res, {
+        removed: true,
+        dailyReportClientLogoUrl: null,
+      });
+    } catch (err) {
+      console.error('deleteDailyReportLogo error:', err);
+      return bad(res, err.message || 'Erro ao remover logo');
+    }
+  },
+  
   async uploadDailyReportLogo(req, res) {
     const project = await InstallationProject.findByPk(req.params.id);
     if (!project) return notFound(res, 'Projeto não encontrado');
