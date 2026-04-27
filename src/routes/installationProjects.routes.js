@@ -451,7 +451,9 @@ router.post('/:id/finish', auth(), requireLevel(2), ctrl.finish);
 
 router.post('/:id/items', auth(), requireLevel(2), ctrl.addItem);
 router.post('/:id/progress', auth(), requireLevel(2), ctrl.addProgress);
+router.patch('/:id/daily-report/settings',  auth(),  requireLevel(2),  ctrl.updateDailyReportSettings);
 
+router.post('/:id/daily-report/send-now',  auth(),  requireLevel(2),  ctrl.sendDailyReportNow);
 
 // ✅ E-mails (Analista+)
 router.post('/:id/emails/start', auth(), requireLevel(2), ctrl.sendStartEmail);

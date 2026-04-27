@@ -51,7 +51,34 @@ InstallationProject.init(
       allowNull: true,
       defaultValue: [],
     },
+  dailyReportEnabled: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  },
 
+  dailyReportSendToClient: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  },
+
+  dailyReportInternalEmails: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: [],
+  },
+
+  dailyReportClientEmails: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: [],
+  },
+
+  dailyReportLastSentAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
     contactPhone: {
       type: DataTypes.STRING,
       allowNull: true,
