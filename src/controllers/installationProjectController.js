@@ -758,8 +758,9 @@ async updateDailyReportSettings(req, res) {
     dailyReportColorDone: value.dailyReportColorDone || '#00c853',
     dailyReportColorPending: value.dailyReportColorPending || '#2f7dbd',
     dailyReportHeaderColor: value.dailyReportHeaderColor || '#2f7dbd',
-    dailyReportClientLogoUrl: values.dailyReportClientLogoUrl || null,
-    dailyReportOmnilinkLogoUrl: values.dailyReportOmnilinkLogoUrl || DEFAULT_OMNILINK_LOGO,
+    dailyReportClientLogoUrl: value.dailyReportClientLogoUrl || null,
+    dailyReportOmnilinkLogoUrl:
+      value.dailyReportOmnilinkLogoUrl || 'https://app.projetos-rc.online/logo_branca.png',
 
     updatedById: req.user.id,
   });
@@ -1950,7 +1951,7 @@ async importBaseExcel(req, res) {
 
     if (!req.file) return bad(res, 'Envie uma imagem');
 
-    const baseUrl = process.env.APP_PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+    const baseUrl = 'https://api.projetos-rc.online';
 
     const logoUrl = `${baseUrl}/uploads/daily-report-logos/${req.file.filename}`;
 
