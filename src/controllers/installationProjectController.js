@@ -885,29 +885,33 @@ function buildStartEmailHtml(project) {
   <div style="font-family:Arial,sans-serif;background:#2b2f33;padding:20px;color:#fff;">
     <div style="max-width:1100px;margin:auto;background:#3a3f45;border-radius:12px;overflow:hidden;">
 
-      <!-- HEADER -->
-      <table width="100%" style="background:${headerColor};color:#fff;">
-        <tr>
-          <td style="padding:16px;text-align:left;">
-            ${
-              clientLogo
-                ? `<img src="${clientLogo}" style="max-height:60px"/>`
-                : `<b>${p.client?.name || ''}</b>`
-            }
-          </td>
+        <!-- HEADER -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:${headerColor};color:#fff;border-collapse:collapse;">
+          <tr>
+            <td style="padding:14px 22px;text-align:left;width:33%;vertical-align:middle;">
+              ${
+                clientLogo
+                  ? `<img src="${clientLogo}" style="max-height:58px;max-width:190px;object-fit:contain;display:block;" />`
+                  : `<strong style="font-size:22px;color:#fff;">${p.client?.name || p.title || ''}</strong>`
+              }
+            </td>
 
-          <td style="text-align:center;">
-            <h2 style="margin:0;">Início do Projeto</h2>
-            <div style="margin-top:4px;">
-              ${p.title || '-'} ${p.af ? `• AF ${p.af}` : ''}
-            </div>
-          </td>
+            <td style="padding:14px 22px;text-align:center;width:34%;color:#fff;vertical-align:middle;">
+              <h2 style="margin:0;font-size:22px;line-height:1.2;">Início do Projeto</h2>
+              <p style="margin:6px 0 0;font-size:14px;line-height:1.3;">
+                ${p.title || '-'} ${p.af ? `• AF ${p.af}` : ''}
+              </p>
+            </td>
 
-          <td style="text-align:right;padding:16px;">
-            <img src="${omnilinkLogo}" style="max-height:60px"/>
-          </td>
-        </tr>
-      </table>
+            <td style="padding:14px 22px;text-align:right;width:33%;vertical-align:middle;">
+              ${
+                omnilinkLogo
+                  ? `<img src="${omnilinkLogo}" style="max-height:58px;max-width:190px;object-fit:contain;display:block;margin-left:auto;" />`
+                  : `<strong style="font-size:22px;color:#fff;">Omnilink</strong>`
+              }
+            </td>
+          </tr>
+        </table>
 
       <!-- CARDS -->
       <table width="100%" style="background:#3a3f45;text-align:center;">
