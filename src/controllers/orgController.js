@@ -26,6 +26,8 @@ function buildTreeFromFlat(list) {
       role: u.role?.name || null,
       roleLevel: u.role?.level || 0,
       managerId: u.managerId ?? null,
+      cargoDescritivo: u.cargoDescritivo || null,
+      ocultarCargo: !!u.ocultarCargo,
       avatarUrl: u.avatarUrl || null,
       sectors: normalizeSectors(u.sectors),
       children: [],
@@ -124,7 +126,16 @@ module.exports = {
   async tree(req, res) {
     try {
       const users = await User.findAll({
-        attributes: ['id', 'name', 'managerId', 'avatarUrl', 'sectors', 'isActive'],
+        attributes: [
+          'id',
+          'name',
+          'managerId',
+          'avatarUrl',
+          'sectors',
+          'isActive',
+          'cargoDescritivo',
+          'ocultarCargo',
+        ],
         where: { isActive: true },
         include: [
           {
@@ -143,6 +154,7 @@ module.exports = {
         managerId: u.managerId,
         avatarUrl: u.avatarUrl,
         sectors: u.sectors,
+        cargoDescritivo: u.cargoDescritivo,
         isActive: u.isActive,
         role: u.role
           ? {
