@@ -508,6 +508,8 @@ router.post('/:id/batch-approve', auth(), requireLevel(3), partRequestController
  */
 router.post('/items/:itemId/approve', auth(), requireLevel(3), partRequestItemController.approve);
 
+
+router.delete('/:id', auth(), requireLevel(2), partRequestController.remove);
 /**
  * @swagger
  * /part-requests/items/{itemId}/reject:
@@ -536,5 +538,7 @@ router.post('/items/:itemId/approve', auth(), requireLevel(3), partRequestItemCo
  *         description: Erro interno
  */
 router.post('/items/:itemId/reject', auth(), requireLevel(3), partRequestItemController.reject);
+
+
 
 module.exports = router;

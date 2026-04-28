@@ -23,10 +23,22 @@ function clean(value) {
 
 function toDate(value) {
   if (!value) return null;
+
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? null : value;
   }
-  const d = new Date(value);
+
+  const raw = String(value).trim();
+
+  // YYYY-MM-DD vindo do frontend
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const [year, month, day] = raw.split('-').map(Number);
+
+    // Cria em horário local, evitando voltar 1 dia por UTC
+    return new Date(year, month - 1, day, 12, 0, 0);
+  }
+
+  const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 

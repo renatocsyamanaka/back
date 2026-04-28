@@ -859,7 +859,48 @@ async function marcarComoVisualizado(req, res) {
     });
   }
 }
+async function remove(req, res) {
+  const transaction = await sequelize.transaction();
 
+  try {
+    const { id } = req.params;
+
+    const order = await PartRequest.findByPk(id, { transaction });
+
+    if (!order) {
+      await transaction.rollback();
+      return res.status(404).json({ error: 'Pedido não encontrado' });
+    }
+
+    await PartRequestHistory.destroy({
+      where: { partRequestId: id },
+      transaction,
+    });
+
+    await PartRequestItem.destroy({
+      where: { partRequestId: id },
+      transaction,
+    });
+
+    await order.destroy({ transaction });
+
+    await transaction.commit();
+
+    return res.json({
+      ok: true,
+      message: 'Pedido excluído com sucesso',
+    });
+  } catch (err) {
+    await transaction.rollback();
+
+    console.error('[partRequest.remove]', err);
+
+    return res.status(500).json({
+      error: 'Erro ao excluir pedido',
+      details: err.message,
+    });
+  }
+}
 async function countNaoVisualizados(req, res) {
   try {
     const count = await PartRequest.count({
@@ -887,4 +928,5 @@ module.exports = {
   batchApprove,
   marcarComoVisualizado,
   countNaoVisualizados,
+  remove
 };
