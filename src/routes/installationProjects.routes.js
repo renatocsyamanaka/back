@@ -462,7 +462,7 @@ const uploadLogo = multer({
 
 router.post('/:id/upload-daily-report-logo',  auth(),  requireLevel(2),  uploadLogo.single('file'),  ctrl.uploadDailyReportLogo);
 router.delete('/:id/delete-daily-report-logo',  auth(),  requireLevel(2),  ctrl.deleteDailyReportLogo);
-
+router.patch('/:id/record-type', auth(), requireLevel(2), ctrl.changeRecordType);
 
 // ✅ Analista+ (2)
 router.get('/', auth(), requireLevel(2), ctrl.list);
@@ -475,6 +475,7 @@ router.delete('/:id/progress/:progressId', auth(), requireLevel(2), ctrl.removeP
 
 router.put('/:id/items/:itemId', auth(), requireLevel(2), ctrl.updateItem);
 router.post('/', auth(), requireLevel(2), ctrl.create);
+router.delete('/:id', auth(), requireLevel(2), ctrl.remove);
 router.patch('/:id', auth(), requireLevel(2), ctrl.update);
 router.delete('/:id/items/:itemId', auth(), requireLevel(2), ctrl.removeItem);
 router.get('/:id/metrics', auth(), requireLevel(2), ctrl.getMetrics);

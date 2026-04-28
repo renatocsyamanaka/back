@@ -465,7 +465,7 @@ const createSchema = Joi.object({
   notes: Joi.string().allow('', null),
   coordinatorId: Joi.number().integer().allow(null),
 
-  recordType: Joi.string().valid('BASE', 'PROJECT').default('PROJECT'),
+  recordType: Joi.string().valid('BASE', 'PROJECT','OUTROS').default('PROJECT'),
   importBatch: Joi.string().allow('', null),
 
   requestedLocationText: Joi.string().allow('', null),
@@ -481,7 +481,7 @@ const listSchema = Joi.object({
   q: Joi.string().allow('', null),
   mine: Joi.boolean().default(false),
   delayed: Joi.boolean().allow(null),
-  recordType: Joi.string().valid('BASE', 'PROJECT').allow(null),
+  recordType: Joi.string().valid('BASE', 'PROJECT', 'OUTROS').allow(null),
   saleDateFrom: dateOnlyField,
   saleDateTo: dateOnlyField,
 }).options({ abortEarly: false, stripUnknown: true });
@@ -814,9 +814,9 @@ async updateDailyReportSettings(req, res) {
     }
 
     const normalizedEmails = normalizeEmailList(value.contactEmails || value.contactEmail);
-    const isBase = (value.recordType || 'PROJECT') === 'BASE';
+    const isNonDashboard = ['BASE', 'OUTROS'].includes(value.recordType || 'PROJECT');
 
-    if (!normalizedEmails.length && !isBase) {
+    if (!normalizedEmails.length && !isNonDashboard) {
       return bad(res, 'Informe pelo menos um e-mail de contato');
     }
 
@@ -939,7 +939,7 @@ async updateDailyReportSettings(req, res) {
       const normalizedEmails = normalizeEmailList(rest.contactEmails || rest.contactEmail);
       const nextRecordType = rest.recordType || project.recordType;
 
-      if (!normalizedEmails.length && nextRecordType !== 'BASE') {
+      if (!normalizedEmails.length && !['BASE', 'OUTROS'].includes(nextRecordType)) {
         return bad(res, 'Informe pelo menos um e-mail de contato');
       }
 
@@ -1009,6 +1009,49 @@ async updateDailyReportSettings(req, res) {
     return ok(res, full);
   },
 
+  async remove(req, res) {
+    try {
+      const project = await InstallationProject.findByPk(req.params.id);
+
+      if (!project) {
+        return notFound(res, 'Projeto não encontrado');
+      }
+
+      await project.destroy();
+
+      return ok(res, {
+        deleted: true,
+        message: 'Registro excluído com sucesso',
+      });
+    } catch (err) {
+      console.error('[installationProject.remove]', err);
+      return bad(res, err.message || 'Erro ao excluir registro');
+    }
+  },
+  async changeRecordType(req, res) {
+  try {
+    const schema = Joi.object({
+      recordType: Joi.string().valid('PROJECT', 'BASE', 'OUTROS').required(),
+    });
+
+    const { error, value } = schema.validate(req.body);
+    if (error) return bad(res, error.message);
+
+    const project = await InstallationProject.findByPk(req.params.id);
+    if (!project) return notFound(res, 'Projeto não encontrado');
+
+    await project.update({
+      recordType: value.recordType,
+      updatedById: req.user.id,
+    });
+
+    const full = await loadProjectWithDetails(project.id);
+    return ok(res, full);
+  } catch (err) {
+    console.error('[installationProject.changeRecordType]', err);
+    return bad(res, err.message || 'Erro ao mover registro');
+  }
+},
   async setWhatsApp(req, res) {
     const schema = Joi.object({
       whatsappGroupName: Joi.string().allow('', null),
@@ -1034,8 +1077,8 @@ async updateDailyReportSettings(req, res) {
     const project = await InstallationProject.findByPk(req.params.id);
     if (!project) return notFound(res, 'Projeto não encontrado');
 
-    if (project.recordType === 'BASE') {
-      return bad(res, 'Converta a BASE para projeto antes de iniciar');
+    if (['BASE', 'OUTROS'].includes(project.recordType)) {
+      return bad(res, 'Converta este registro para projeto antes de iniciar');
     }
 
     if (!project.startPlannedAt) {
@@ -1984,7 +2027,7 @@ async importBaseExcel(req, res) {
       return bad(res, err.message || 'Erro ao remover logo');
     }
   },
-  
+
   async uploadDailyReportLogo(req, res) {
     const project = await InstallationProject.findByPk(req.params.id);
     if (!project) return notFound(res, 'Projeto não encontrado');
