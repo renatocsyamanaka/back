@@ -4,6 +4,7 @@ const requireLevel = require('../middleware/rbac');
 
 const partRequestController = require('../controllers/partRequestController');
 const partRequestItemController = require('../controllers/partRequestItemController');
+const auditAction = require('../middleware/auditAction');
 
 /**
  * @swagger
@@ -213,7 +214,16 @@ const partRequestItemController = require('../controllers/partRequestItemControl
  *       500:
  *         description: Erro interno
  */
-router.post('/public', partRequestController.create);
+router.post(
+  '/public',
+  auditAction({
+    module: 'PECAS_PEDIDOS',
+    action: 'PEDIDO_PUBLICO_CRIADO',
+    description: 'Criou pedido de peças público',
+    entity: 'PartRequest',
+  }),
+  partRequestController.create
+);
 
 /**
  * @swagger
@@ -255,20 +265,6 @@ router.get('/public/search', partRequestController.publicSearch);
  *     responses:
  *       200:
  *         description: Quantidade retornada com sucesso
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 ok:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   type: object
- *                   properties:
- *                     count:
- *                       type: integer
- *                       example: 3
  *       401:
  *         description: Não autorizado
  *       500:
@@ -300,7 +296,17 @@ router.get('/nao-visualizados/count', auth(), partRequestController.countNaoVisu
  *       500:
  *         description: Erro interno
  */
-router.post('/', auth(), partRequestController.create);
+router.post(
+  '/',
+  auth(),
+  auditAction({
+    module: 'PECAS_PEDIDOS',
+    action: 'PEDIDO_INTERNO_CRIADO',
+    description: 'Criou pedido de peças interno',
+    entity: 'PartRequest',
+  }),
+  partRequestController.create
+);
 
 /**
  * @swagger
@@ -310,46 +316,6 @@ router.post('/', auth(), partRequestController.create);
  *     tags: [Pedidos de Peças]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *       - in: query
- *         name: requestNumber
- *         schema:
- *           type: string
- *       - in: query
- *         name: requesterName
- *         schema:
- *           type: string
- *       - in: query
- *         name: clientId
- *         schema:
- *           type: integer
- *       - in: query
- *         name: managerId
- *         schema:
- *           type: integer
- *       - in: query
- *         name: mine
- *         schema:
- *           type: boolean
- *       - in: query
- *         name: originType
- *         schema:
- *           type: string
- *       - in: query
- *         name: visualizado
- *         schema:
- *           type: boolean
- *     responses:
- *       200:
- *         description: Lista retornada com sucesso
- *       401:
- *         description: Não autorizado
- *       500:
- *         description: Erro interno
  */
 router.get('/', auth(), partRequestController.list);
 
@@ -361,24 +327,18 @@ router.get('/', auth(), partRequestController.list);
  *     tags: [Pedidos de Peças]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *         example: 12
- *     responses:
- *       200:
- *         description: Pedido marcado como visualizado
- *       404:
- *         description: Pedido não encontrado
- *       401:
- *         description: Não autorizado
- *       500:
- *         description: Erro interno
  */
-router.put('/:id/visualizar', auth(), partRequestController.marcarComoVisualizado);
+router.put(
+  '/:id/visualizar',
+  auth(),
+  auditAction({
+    module: 'PECAS_PEDIDOS',
+    action: 'PEDIDO_VISUALIZADO',
+    description: 'Visualizou pedido de peças',
+    entity: 'PartRequest',
+  }),
+  partRequestController.marcarComoVisualizado
+);
 
 /**
  * @swagger
@@ -388,22 +348,6 @@ router.put('/:id/visualizar', auth(), partRequestController.marcarComoVisualizad
  *     tags: [Pedidos de Peças]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *         example: 12
- *     responses:
- *       200:
- *         description: Pedido encontrado
- *       404:
- *         description: Pedido não encontrado
- *       401:
- *         description: Não autorizado
- *       500:
- *         description: Erro interno
  */
 router.get('/:id', auth(), partRequestController.show);
 
@@ -415,32 +359,19 @@ router.get('/:id', auth(), partRequestController.show);
  *     tags: [Pedidos de Peças]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *         example: 12
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/PartRequestUpdateInput'
- *     responses:
- *       200:
- *         description: Pedido atualizado com sucesso
- *       401:
- *         description: Não autorizado
- *       403:
- *         description: Sem permissão
- *       404:
- *         description: Pedido não encontrado
- *       500:
- *         description: Erro interno
  */
-router.patch('/:id', auth(), requireLevel(2), partRequestController.update);
+router.patch(
+  '/:id',
+  auth(),
+  requireLevel(2),
+  auditAction({
+    module: 'PECAS_PEDIDOS',
+    action: 'PEDIDO_ATUALIZADO',
+    description: 'Atualizou pedido de peças',
+    entity: 'PartRequest',
+  }),
+  partRequestController.update
+);
 
 /**
  * @swagger
@@ -450,34 +381,19 @@ router.patch('/:id', auth(), requireLevel(2), partRequestController.update);
  *     tags: [Pedidos de Peças]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *         example: 12
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/BatchApproveInput'
- *     responses:
- *       200:
- *         description: Aprovação em lote realizada com sucesso
- *       400:
- *         description: Dados inválidos
- *       401:
- *         description: Não autorizado
- *       403:
- *         description: Sem permissão
- *       404:
- *         description: Pedido não encontrado
- *       500:
- *         description: Erro interno
  */
-router.post('/:id/batch-approve', auth(), requireLevel(3), partRequestController.batchApprove);
+router.post(
+  '/:id/batch-approve',
+  auth(),
+  requireLevel(3),
+  auditAction({
+    module: 'PECAS_PEDIDOS',
+    action: 'PEDIDO_APROVADO_EM_LOTE',
+    description: 'Aprovou itens do pedido de peças em lote',
+    entity: 'PartRequest',
+  }),
+  partRequestController.batchApprove
+);
 
 /**
  * @swagger
@@ -487,29 +403,20 @@ router.post('/:id/batch-approve', auth(), requireLevel(3), partRequestController
  *     tags: [Pedidos de Peças]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: itemId
- *         required: true
- *         schema:
- *           type: integer
- *         example: 100
- *     responses:
- *       200:
- *         description: Item aprovado com sucesso
- *       401:
- *         description: Não autorizado
- *       403:
- *         description: Sem permissão
- *       404:
- *         description: Item não encontrado
- *       500:
- *         description: Erro interno
  */
-router.post('/items/:itemId/approve', auth(), requireLevel(3), partRequestItemController.approve);
+router.post(
+  '/items/:itemId/approve',
+  auth(),
+  requireLevel(3),
+  auditAction({
+    module: 'PECAS_PEDIDOS',
+    action: 'ITEM_PEDIDO_APROVADO',
+    description: 'Aprovou item individual do pedido de peças',
+    entity: 'PartRequestItem',
+  }),
+  partRequestItemController.approve
+);
 
-
-router.delete('/:id', auth(), requireLevel(2), partRequestController.remove);
 /**
  * @swagger
  * /part-requests/items/{itemId}/reject:
@@ -518,27 +425,40 @@ router.delete('/:id', auth(), requireLevel(2), partRequestController.remove);
  *     tags: [Pedidos de Peças]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: itemId
- *         required: true
- *         schema:
- *           type: integer
- *         example: 100
- *     responses:
- *       200:
- *         description: Item rejeitado com sucesso
- *       401:
- *         description: Não autorizado
- *       403:
- *         description: Sem permissão
- *       404:
- *         description: Item não encontrado
- *       500:
- *         description: Erro interno
  */
-router.post('/items/:itemId/reject', auth(), requireLevel(3), partRequestItemController.reject);
+router.post(
+  '/items/:itemId/reject',
+  auth(),
+  requireLevel(3),
+  auditAction({
+    module: 'PECAS_PEDIDOS',
+    action: 'ITEM_PEDIDO_REJEITADO',
+    description: 'Rejeitou item individual do pedido de peças',
+    entity: 'PartRequestItem',
+  }),
+  partRequestItemController.reject
+);
 
-
+/**
+ * @swagger
+ * /part-requests/{id}:
+ *   delete:
+ *     summary: Excluir pedido de peças
+ *     tags: [Pedidos de Peças]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.delete(
+  '/:id',
+  auth(),
+  requireLevel(2),
+  auditAction({
+    module: 'PECAS_PEDIDOS',
+    action: 'PEDIDO_EXCLUIDO',
+    description: 'Excluiu pedido de peças',
+    entity: 'PartRequest',
+  }),
+  partRequestController.remove
+);
 
 module.exports = router;

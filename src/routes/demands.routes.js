@@ -4,6 +4,7 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const requireLevel = require('../middleware/rbac');
 const controller = require('../controllers/demandController');
+const auditAction = require('../middleware/auditAction');
 
 router.use(auth());
 
@@ -435,7 +436,7 @@ router.get('/:id', controller.getById);
  *       400:
  *         description: Dados inválidos
  */
-router.post('/', requireLevel(2), controller.create);
+router.post('/', requireLevel(2), auditAction({ module: 'DEMANDS', action: 'DEMANDA_CRIADA', description: 'Criou uma demanda', entity: 'Demand' }), controller.create);
 
 /**
  * @swagger
@@ -521,7 +522,7 @@ router.post('/', requireLevel(2), controller.create);
  *       404:
  *         description: Demanda não encontrada
  */
-router.put('/:id', requireLevel(2), controller.update);
+router.put('/:id', requireLevel(2), auditAction({ module: 'DEMANDS', action: 'DEMANDA_ATUALIZADA', description: 'Atualizou uma demanda', entity: 'Demand' }), controller.update);
 
 /**
  * @swagger
@@ -554,7 +555,7 @@ router.put('/:id', requireLevel(2), controller.update);
  *       404:
  *         description: Demanda não encontrada
  */
-router.delete('/:id', requireLevel(3), controller.remove);
+router.delete('/:id', requireLevel(3), auditAction({ module: 'DEMANDS', action: 'DEMANDA_EXCLUIDA', description: 'Excluiu uma demanda logicamente', entity: 'Demand' }), controller.remove);
 
 /**
  * @swagger
@@ -591,6 +592,6 @@ router.delete('/:id', requireLevel(3), controller.remove);
  *       404:
  *         description: Demanda não encontrada
  */
-router.patch('/:id/restore', requireLevel(3), controller.restore);
+router.patch('/:id/restore', requireLevel(3), auditAction({ module: 'DEMANDS', action: 'DEMANDA_RESTAURADA', description: 'Restaurou uma demanda excluída', entity: 'Demand' }), controller.restore);
 
 module.exports = router;

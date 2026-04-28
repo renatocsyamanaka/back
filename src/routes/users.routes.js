@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const requireLevel = require('../middleware/rbac');
 const ctrl = require('../controllers/userController');
 const { uploadAvatar } = require('../config/upload');
+const auditAction = require('../middleware/auditAction');
 
 /**
  * @swagger
@@ -298,7 +299,7 @@ router.get('/providers', ctrl.listProviders);
  *       403:
  *         description: "Permissão insuficiente"
  */
-router.post('/', auth(), requireLevel(3), ctrl.create);
+router.post('/', auth(), requireLevel(3), auditAction({ module: 'USUARIOS', action: 'USUARIO_CRIADO', description: 'Criou um novo colaborador', entity: 'User' }), ctrl.create);
 
 /**
  * @swagger
@@ -396,7 +397,7 @@ router.get('/', auth(), ctrl.list);
  *       400:
  *         description: "Erro de validação / setor inválido"
  */
-router.post('/workers', auth(), requireLevel(2), ctrl.createWorker);
+router.post('/workers', auth(), requireLevel(2), auditAction({ module: 'USUARIOS', action: 'WORKER_CRIADO', description: 'Cadastrou Técnico/PSO/ATA/PRP/SPOT', entity: 'User' }), ctrl.createWorker);
 
 /**
  * @swagger
@@ -511,7 +512,7 @@ router.get('/technicians', auth(), ctrl.listTechnicians);
  *       401:
  *         description: "Não autorizado"
  */
-router.put('/me/change-password', auth(), ctrl.changeMyPassword);
+router.put('/me/change-password', auth(), auditAction({ module: 'USUARIOS', action: 'SENHA_ALTERADA', description: 'Alterou a própria senha', entity: 'User' }), ctrl.changeMyPassword);
 /**
  * @swagger
  * /api/users/me/profile:
@@ -624,7 +625,7 @@ router.get('/me/profile', auth(), ctrl.getMyProfile);
  *       401:
  *         description: Não autenticado
  */
-router.patch('/me/profile', auth(), ctrl.updateMyProfile);
+router.patch('/me/profile', auth(), auditAction({ module: 'USUARIOS', action: 'PERFIL_ATUALIZADO', description: 'Atualizou o próprio perfil', entity: 'User' }), ctrl.updateMyProfile);
 
 /**
  * @swagger
@@ -682,7 +683,7 @@ router.patch('/me/profile', auth(), ctrl.updateMyProfile);
  *       401:
  *         description: Não autenticado
  */
-router.post('/me/avatar', auth(), uploadAvatar.single('file'), ctrl.uploadMyAvatar);
+router.post('/me/avatar', auth(), uploadAvatar.single('file'), auditAction({ module: 'USUARIOS', action: 'AVATAR_PROPRIO_ATUALIZADO', description: 'Atualizou o próprio avatar', entity: 'User' }), ctrl.uploadMyAvatar);
 
 /**
  * @swagger
@@ -712,7 +713,7 @@ router.post('/me/avatar', auth(), uploadAvatar.single('file'), ctrl.uploadMyAvat
  *       404:
  *         description: "Usuário/Gestor não encontrado"
  */
-router.patch('/:id/manager', auth(), requireLevel(2), ctrl.setManager);
+router.patch('/:id/manager', auth(), requireLevel(2), auditAction({ module: 'USUARIOS', action: 'GESTOR_ALTERADO', description: 'Alterou o gestor do colaborador', entity: 'User' }), ctrl.setManager);
 
 /**
  * @swagger
@@ -821,7 +822,7 @@ router.patch('/:id/manager', auth(), requireLevel(2), ctrl.setManager);
  *       404:
  *         description: "Usuário não encontrado"
  */
-router.patch('/:id', auth(), requireLevel(2), ctrl.update);
+router.patch('/:id', auth(), requireLevel(2), auditAction({ module: 'USUARIOS', action: 'USUARIO_ATUALIZADO', description: 'Atualizou dados do colaborador', entity: 'User' }), ctrl.update);
 
 /**
  * @swagger
@@ -857,7 +858,7 @@ router.patch('/:id', auth(), requireLevel(2), ctrl.update);
  *       404:
  *         description: "Usuário não encontrado"
  */
-router.patch('/:id/address', auth(), requireLevel(2), ctrl.updateAddress);
+router.patch('/:id/address', auth(), requireLevel(2), auditAction({ module: 'USUARIOS', action: 'ENDERECO_ATUALIZADO', description: 'Atualizou endereço do colaborador', entity: 'User' }), ctrl.updateAddress);
 
 /**
  * @swagger
@@ -887,7 +888,7 @@ router.patch('/:id/address', auth(), requireLevel(2), ctrl.updateAddress);
  *       404:
  *         description: "Usuário não encontrado"
  */
-router.post('/:id/avatar', auth(), uploadAvatar.single('file'), ctrl.uploadAvatar);
+router.post('/:id/avatar', auth(), uploadAvatar.single('file'), auditAction({ module: 'USUARIOS', action: 'AVATAR_ATUALIZADO', description: 'Atualizou avatar do colaborador', entity: 'User' }), ctrl.uploadAvatar);
 
 /**
  * @swagger
@@ -911,7 +912,7 @@ router.post('/:id/avatar', auth(), uploadAvatar.single('file'), ctrl.uploadAvata
  *       404:
  *         description: "Usuário não encontrado"
  */
-router.get('/:id/structure', auth(), ctrl.getStructure);
+router.get('/:id/structure', auth(), auditAction({ module: 'USUARIOS', action: 'ESTRUTURA_VISUALIZADA', description: 'Visualizou estrutura hierárquica do colaborador', entity: 'User' }), ctrl.getStructure);
 
 
 module.exports = router;

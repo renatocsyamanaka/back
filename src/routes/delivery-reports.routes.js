@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const requireLevel = require('../middleware/rbac');
 const controller = require('../controllers/deliveryReportController');
 const importController = require('../controllers/deliveryReportImportController');
+const auditAction = require('../middleware/auditAction');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -163,12 +164,7 @@ router.get('/', controller.list);
  *       400:
  *         description: Arquivo não enviado ou inválido
  */
-router.post(
-  '/import',
-  requireLevel(2),
-  upload.single('file'),
-  importController.importExcel
-);
+router.post('/import', requireLevel(2), upload.single('file'), auditAction({ module:'CTE', action:'IMPORTACAO_EXCEL_INICIADA', description:'Iniciou importação de CTE via Excel', entity:'DeliveryReport' }), importController.importExcel);
 
 /**
  * @swagger
@@ -432,7 +428,7 @@ router.get('/:id', controller.getById);
  *       400:
  *         description: Dados inválidos
  */
-router.post('/', requireLevel(2), controller.create);
+router.post('/', requireLevel(2), auditAction({ module:'CTE', action:'CTE_CRIADO', description:'Criou um novo CTE', entity:'DeliveryReport' }), controller.create);
 
 /**
  * @swagger
@@ -513,7 +509,7 @@ router.post('/', requireLevel(2), controller.create);
  *       404:
  *         description: CTE não encontrado
  */
-router.put('/:id', requireLevel(2), controller.update);
+router.put('/:id', requireLevel(2), auditAction({ module:'CTE', action:'CTE_ATUALIZADO', description:'Atualizou um CTE', entity:'DeliveryReport' }), controller.update);
 
 /**
  * @swagger
@@ -536,7 +532,7 @@ router.put('/:id', requireLevel(2), controller.update);
  *       404:
  *         description: CTE não encontrado
  */
-router.delete('/:id', requireLevel(3), controller.remove);
+router.delete('/:id', requireLevel(3), auditAction({ module:'CTE', action:'CTE_EXCLUIDO', description:'Excluiu um CTE', entity:'DeliveryReport' }), controller.remove);
 
 /**
  * @swagger
@@ -569,6 +565,6 @@ router.delete('/:id', requireLevel(3), controller.remove);
  *       404:
  *         description: CTE não encontrado
  */
-router.patch('/:id/restore', requireLevel(3), controller.restore);
+router.patch('/:id/restore', requireLevel(3), auditAction({ module:'CTE', action:'CTE_RESTAURADO', description:'Restaurou um CTE', entity:'DeliveryReport' }), controller.restore);
 
 module.exports = router;

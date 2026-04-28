@@ -45,6 +45,7 @@ const WhatsappConversation = require('./WhatsappConversation');
 const WhatsappMessage = require('./WhatsappMessage');
 const WhatsappFlow = require('./WhatsappFlow');
 const WhatsappFlowStep = require('./WhatsappFlowStep');
+const ActivityLog = require('./ActivityLog');
 
 
 
@@ -60,6 +61,13 @@ WhatsappConversation.belongsTo(User, {  as: 'createdBy',  foreignKey: 'createdBy
 
 User.hasMany(WhatsappConversation, {  as: 'whatsappConversationsUpdated',  foreignKey: 'updatedById',});
 WhatsappConversation.belongsTo(User, {  as: 'updatedBy',  foreignKey: 'updatedById',});
+
+
+
+// ----------------- LOGS Usuarios -----------------
+
+User.hasMany(ActivityLog, { as: 'activityLogs', foreignKey: 'userId' });
+ActivityLog.belongsTo(User, { as: 'user', foreignKey: 'userId' });
 
 // ----------------- Dashboard Banners -----------------
 DashboardBanner.belongsTo(User, {  as: 'createdBy',  foreignKey: 'createdById',  onDelete: 'SET NULL',  onUpdate: 'CASCADE',});
@@ -660,4 +668,5 @@ module.exports = {
   AtaDocument,
   DashboardBanner,
   SystemUpdate,
+  ActivityLog
 };
