@@ -50,7 +50,7 @@ mount('/system-updates', './system-updates.routes');
 mount('/installation-projects/dashboard', './installationProjectsDashboard.routes');
 mount('/installation-projects', './installationProjects.routes');
 mount('/installation-projects/geolocation', './installationProjectGeolocation.routes');
-
+mount('/files', './files.routes');
 mount('/parts', './part-catalog.routes');
 mount('/user-registration-requests', './userRegistrationRequest.routes');
 mount('/delivery-reports', './delivery-reports.routes');
