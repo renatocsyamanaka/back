@@ -39,6 +39,7 @@ const registrationStorage = multer.diskStorage({
     cb(null, safeName);
   },
 });
+
 const internalAdditionalStorage = multer.diskStorage({
   destination: (req, _file, cb) => {
     const needId = req.params.needId || 'temp';
@@ -62,6 +63,7 @@ const uploadRegistration = multer({
   storage: registrationStorage,
   limits: { fileSize: 20 * 1024 * 1024 },
 });
+
 const uploadInternalAdditional = multer({
   storage: internalAdditionalStorage,
   limits: { fileSize: 20 * 1024 * 1024 },
@@ -74,6 +76,7 @@ router.get('/document-types', auth(), ctrl.listDocumentTypes);
 router.post('/document-types', auth(), requireLevel(2), ctrl.createDocumentType);
 router.put('/document-types/:documentTypeId', auth(), requireLevel(2), ctrl.updateDocumentType);
 router.post('/document-types/seed-defaults', auth(), requireLevel(2), ctrl.seedDefaultDocumentTypes);
+
 router.post(
   '/document-types/:documentTypeId/template',
   auth(),
@@ -93,26 +96,57 @@ router.patch('/needs/:needId/invites/:inviteId/cancel', auth(), requireLevel(2),
 router.patch('/needs/:needId/review', auth(), requireLevel(2), ctrl.reviewRegistration);
 router.patch('/documents/:documentId/review', auth(), requireLevel(2), ctrl.reviewDocument);
 router.delete('/documents/:documentId', auth(), requireLevel(2), ctrl.deleteRegistrationDocument);
-router.post('/invites/:inviteId/resend-email',  auth(), requireLevel(2),  ctrl.resendInviteEmail);
-router.post('/needs/:needId/internal-documents', auth(), requireLevel(2),  uploadInternalAdditional.single('file'),  ctrl.uploadInternalDocument);
+router.post('/invites/:inviteId/resend-email', auth(), requireLevel(2), ctrl.resendInviteEmail);
 
+router.post(
+  '/needs/:needId/internal-documents',
+  auth(),
+  requireLevel(2),
+  uploadInternalAdditional.single('file'),
+  ctrl.uploadInternalDocument
+);
+
+/**
+ * PRESTADORES APROVADOS
+ */
 router.get('/approved', auth(), requireLevel(2), ctrl.listApprovedRegistrations);
 router.get('/approved/export/csv', auth(), requireLevel(2), ctrl.exportApprovedRegistrationsCsv);
 router.get('/approved/:registrationId', auth(), requireLevel(2), ctrl.getApprovedRegistrationDetail);
 router.get('/approved/:registrationId/documents', auth(), requireLevel(2), ctrl.listApprovedRegistrationDocuments);
-router.get('/approved/:registrationId/documents/:documentId/view', auth(), requireLevel(2), ctrl.viewApprovedRegistrationDocument);
-router.get('/approved/:registrationId/documents/:documentId/download', auth(), requireLevel(2), ctrl.downloadApprovedRegistrationDocument);
+
+router.get(
+  '/approved/:registrationId/documents/download-zip',
+  auth(),
+  requireLevel(2),
+  (req, res) => ctrl.downloadApprovedRegistrationDocumentsZip(req, res)
+);
+
+router.get(
+  '/approved/:registrationId/documents/:documentId/view',
+  auth(),
+  requireLevel(2),
+  ctrl.viewApprovedRegistrationDocument
+);
+
+router.get(
+  '/approved/:registrationId/documents/:documentId/download',
+  auth(),
+  requireLevel(2),
+  ctrl.downloadApprovedRegistrationDocument
+);
 
 /**
  * PÚBLICO
  */
 router.get('/public/:token', ctrl.publicOpen);
 router.patch('/public/:token/draft', ctrl.publicSaveDraft);
+
 router.post(
   '/public/:token/documents',
   uploadRegistration.single('file'),
   ctrl.publicUploadDocument
 );
+
 router.delete('/public/:token/documents/:documentId', ctrl.publicDeleteDocument);
 router.post('/public/:token/submit', ctrl.publicSubmit);
 

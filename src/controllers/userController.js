@@ -259,6 +259,11 @@ const changePasswordSchema = Joi.object({
   confirmNewPassword: Joi.string().required(),
 });
 
+const adminChangePasswordSchema = Joi.object({
+  newPassword: Joi.string().min(6).required(),
+  confirmNewPassword: Joi.string().required(),
+});
+
 const userSchema = Joi.object({
   name: Joi.string().required(),
   email: Joi.string().email().required(),
@@ -367,6 +372,39 @@ async function geocodeNominatim(query) {
   if (!Array.isArray(data) || data.length === 0) return null;
   const { lat, lon } = data[0];
   return { lat: Number(lat), lng: Number(lon) };
+}
+
+
+async function adminChangeUserPassword(req, res) {
+  try {
+    const { id } = req.params;
+
+    const { error, value } = adminChangePasswordSchema.validate(req.body, {
+      stripUnknown: true,
+    });
+
+    if (error) return bad(res, error.message);
+
+    const { newPassword, confirmNewPassword } = value;
+
+    if (newPassword !== confirmNewPassword) {
+      return bad(res, 'A confirmação da nova senha não confere');
+    }
+
+    const user = await User.findByPk(id);
+    if (!user) return notFound(res, 'Usuário não encontrado');
+
+    if (user.loginEnabled === false) {
+      return bad(res, 'Este usuário não possui login habilitado');
+    }
+
+    user.password_hash = newPassword;
+    await user.save();
+
+    return ok(res, { message: 'Senha alterada com sucesso' });
+  } catch (err) {
+    return bad(res, err.message || 'Erro ao alterar senha do usuário');
+  }
 }
 
 async function cepLookup(req, res) {
@@ -1340,4 +1378,5 @@ module.exports = {
   getMyProfile,
   updateMyProfile,
   uploadMyAvatar,
+  adminChangeUserPassword,
 };

@@ -914,5 +914,16 @@ router.post('/:id/avatar', auth(), uploadAvatar.single('file'), auditAction({ mo
  */
 router.get('/:id/structure', auth(), auditAction({ module: 'USUARIOS', action: 'ESTRUTURA_VISUALIZADA', description: 'Visualizou estrutura hierárquica do colaborador', entity: 'User' }), ctrl.getStructure);
 
-
+router.put(
+  '/:id/change-password',
+  auth(),
+  requireLevel(5),
+  auditAction({
+    module: 'USUARIOS',
+    action: 'SENHA_USUARIO_ALTERADA',
+    description: 'Alterou a senha de outro usuário',
+    entity: 'User',
+  }),
+  ctrl.adminChangeUserPassword
+);
 module.exports = router;
