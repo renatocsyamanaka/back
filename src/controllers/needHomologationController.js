@@ -898,120 +898,129 @@ module.exports = {
 
     return ok(res, rows);
   },
-async downloadApprovedRegistrationDocumentsZip(req, res) {
-  try {
-    const { registrationId } = req.params;
 
-    const row = await findRegistrationWithRelationsOr404(registrationId);
-    if (!row) return notFound(res, 'Cadastro não encontrado');
+  async downloadApprovedRegistrationDocumentsZip(req, res) {
+    try {
+      const { registrationId } = req.params;
 
-    const documents = await NeedRegistrationDocument.findAll({
-      where: { registrationId: row.id },
-      include: [
-        {
-          model: HomologationDocumentType,
-          as: 'documentType',
-          attributes: ['id', 'name', 'code'],
-        },
-      ],
-      order: [['createdAt', 'ASC']],
-    });
+      const row = await findRegistrationWithRelationsOr404(registrationId);
+      if (!row) return notFound(res, 'Cadastro não encontrado');
 
-    if (!documents.length) {
-      return notFound(res, 'Nenhum documento encontrado para este cadastro');
-    }
-
-    const safeName = String(row.fullName || row.company || `cadastro-${row.id}`)
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^\w\s-]/g, '')
-      .replace(/\s+/g, '_');
-
-    const archive = archiver('zip', { zlib: { level: 9 } });
-
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="documentos_${safeName}.zip"`
-    );
-
-    archive.on('error', (err) => {
-      console.error('Erro no ZIP:', err);
-      if (!res.headersSent) {
-        return res.status(500).json({ error: 'Erro ao gerar ZIP' });
-      }
-      res.end();
-    });
-
-    archive.pipe(res);
-
-    let added = 0;
-
-    // 🔥 FUNÇÃO CORRIGIDA (fora do loop)
-    function resolveUploadFilePath(url) {
-      let cleanUrl = String(url || '').trim();
-
-      cleanUrl = cleanUrl.replace(/^https?:\/\/[^/]+/i, '');
-      cleanUrl = cleanUrl.replace(/^\/api\//i, '/');
-      cleanUrl = cleanUrl.replace(/^\/+/, '');
-
-      if (!cleanUrl.startsWith('uploads/')) {
-        cleanUrl = cleanUrl.replace(/^.*uploads\//i, 'uploads/');
-      }
-
-      return path.resolve(process.cwd(), cleanUrl);
-    }
-
-    // 🔥 LOOP CORRIGIDO
-    for (const doc of documents) {
-      if (!doc.url) continue;
-
-      const absPath = resolveUploadFilePath(doc.url);
-
-      console.log('ZIP arquivo:', {
-        id: doc.id,
-        url: doc.url,
-        absPath,
-        exists: fs.existsSync(absPath),
+      const documents = await NeedRegistrationDocument.findAll({
+        where: { registrationId: row.id },
+        include: [
+          {
+            model: HomologationDocumentType,
+            as: 'documentType',
+            attributes: ['id', 'name', 'code'],
+          },
+        ],
+        order: [['createdAt', 'ASC']],
       });
 
-      if (!fs.existsSync(absPath)) continue;
+      if (!documents.length) {
+        return notFound(res, 'Nenhum documento encontrado para este cadastro');
+      }
 
-      const typeName = String(doc.documentType?.name || 'Documento')
-        .replace(/[\\/:*?"<>|]/g, '-');
+      const safeName = String(row.fullName || row.company || `cadastro-${row.id}`)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^\w\s-]/g, '')
+        .replace(/\s+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '');
 
-      const originalName = String(
-        doc.originalName || doc.fileName || `documento-${doc.id}`
-      ).replace(/[\\/:*?"<>|]/g, '-');
+      const zipFileName = `documentos_homologacao_${safeName}.zip`;
 
-      archive.file(absPath, {
-        name: `${typeName}/${originalName}`,
-      });
+      const archive = archiver('zip', { zlib: { level: 9 } });
 
-      added++;
-    }
-
-    // 🔥 fallback caso não encontre arquivos
-    if (!added) {
-      archive.append(
-        'Nenhum arquivo físico encontrado no servidor.\n\nVerifique os caminhos dos arquivos.',
-        { name: 'aviso.txt' }
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${zipFileName}"; filename*=UTF-8''${encodeURIComponent(zipFileName)}`
       );
-    }
 
-    await archive.finalize();
-  } catch (error) {
-    console.error('ERRO ZIP:', error);
+      archive.on('error', (err) => {
+        console.error('Erro no ZIP:', err);
 
-    if (!res.headersSent) {
-      return res.status(500).json({
-        error: error.message || 'Erro ao baixar documentos em ZIP.',
+        if (!res.headersSent) {
+          return res.status(500).json({ error: 'Erro ao gerar ZIP' });
+        }
+
+        return res.end();
       });
-    }
 
-    return res.end();
-  }
-},
+      archive.pipe(res);
+
+      let added = 0;
+
+      function resolveUploadFilePath(url) {
+        let cleanUrl = String(url || '').trim();
+
+        cleanUrl = cleanUrl.replace(/^https?:\/\/[^/]+/i, '');
+        cleanUrl = cleanUrl.replace(/^\/api\//i, '/');
+        cleanUrl = cleanUrl.replace(/^\/+/, '');
+
+        if (!cleanUrl.startsWith('uploads/')) {
+          cleanUrl = cleanUrl.replace(/^.*uploads\//i, 'uploads/');
+        }
+
+        return path.resolve(process.cwd(), cleanUrl);
+      }
+
+      for (const doc of documents) {
+        if (!doc.url) continue;
+
+        const absPath = resolveUploadFilePath(doc.url);
+
+        console.log('ZIP arquivo:', {
+          id: doc.id,
+          url: doc.url,
+          absPath,
+          exists: fs.existsSync(absPath),
+        });
+
+        if (!fs.existsSync(absPath)) continue;
+
+        const typeName = String(doc.documentType?.name || 'Documento')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[\\/:*?"<>|]/g, '-')
+          .trim();
+
+        const originalName = String(
+          doc.originalName || doc.fileName || `documento-${doc.id}`
+        )
+          .replace(/[\\/:*?"<>|]/g, '-')
+          .trim();
+
+        archive.file(absPath, {
+          name: `${safeName}/${typeName}/${originalName}`,
+        });
+
+        added++;
+      }
+
+      if (!added) {
+        archive.append(
+          'Nenhum arquivo físico encontrado no servidor.\n\nVerifique os caminhos dos arquivos.',
+          { name: `${safeName}/aviso.txt` }
+        );
+      }
+
+      await archive.finalize();
+    } catch (error) {
+      console.error('ERRO ZIP:', error);
+
+      if (!res.headersSent) {
+        return res.status(500).json({
+          error: error.message || 'Erro ao baixar documentos em ZIP.',
+        });
+      }
+
+      return res.end();
+    }
+  },
+
   async listDocumentTypes(_req, res) {
     await ensureDefaultDocumentTypes();
 
