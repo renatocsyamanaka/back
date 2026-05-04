@@ -533,14 +533,12 @@ function buildCompleteDailyEmailHtml(project, progressList, targetDate) {
   const headerColor = p.dailyReportHeaderColor || '#2f7dbd';
   const clientLogo = p.dailyReportClientLogoUrl || '';
   const omnilinkLogo =
-  p.dailyReportOmnilinkLogoUrl || 'https://app.projetos-rc.online/logo_branca.png';
+    p.dailyReportOmnilinkLogoUrl || 'https://app.projetos-rc.online/logo_branca.png';
 
-  const allVehicles = progressList.flatMap((progress) => {
-    const date = progress.date;
+  const allVehicles = (progressList || []).flatMap((progress) => {
     const vehicles = Array.isArray(progress.vehicles) ? progress.vehicles : [];
-
     return vehicles.map((v) => ({
-      date,
+      date: progress.date,
       plate: v.plate || '-',
       serial: v.serial || '-',
       product: p.items?.[0]?.equipmentName || '-',
@@ -553,128 +551,115 @@ function buildCompleteDailyEmailHtml(project, progressList, targetDate) {
 
   const rows = allVehicles.map((v) => `
     <tr>
-      <td>${dayjs(v.date).format('DD/MM/YYYY')}</td>
-      <td>${v.plate}</td>
-      <td>${v.serial}</td>
-      <td>${v.product}</td>
-      <td>${v.procedure}</td>
-      <td>${v.status}</td>
-      <td>${v.unit}</td>
-      <td>${v.company}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${dayjs(v.date).format('DD/MM/YYYY')}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.plate}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.serial}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.product}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.procedure}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.status}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.unit}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.company}</td>
     </tr>
   `).join('');
 
   return `
-    <div style="font-family:Arial,sans-serif;background:#eaf4ff;padding:20px;color:#111;">
-      <div style="max-width:1100px;margin:auto;background:#eaf4ff;border:1px solid #9fb3c8;border-radius:10px;overflow:hidden;">
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8" /></head>
+<body style="margin:0;padding:0;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;color:#111;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef4fb;">
+<tr>
+<td align="center" style="padding:20px 10px;">
+<table width="800" cellpadding="0" cellspacing="0" border="0" style="width:800px;background:#ffffff;border-collapse:collapse;border:1px solid #d1d5db;">
 
-        <table width="100%" cellpadding="0" cellspacing="0" style="background:${headerColor};border-collapse:collapse;">
-          <tr>
-            <td style="padding:14px 22px;text-align:left;width:33%;">
-              ${
-                clientLogo
-                  ? `<img src="${clientLogo}" style="max-height:58px;max-width:190px;object-fit:contain;" />`
-                  : `<strong style="font-size:22px;color:#fff;">${p.client?.name || p.title || ''}</strong>`
-              }
-            </td>
+<tr>
+<td style="background:${headerColor};padding:0;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:${headerColor};">
+<tr>
+<td width="30%" align="left" valign="middle" style="padding:16px;">
+${clientLogo ? `<img src="${clientLogo}" width="150" style="display:block;border:0;max-width:150px;height:auto;" />` : `<span style="font-size:20px;font-weight:bold;color:#fff;">${p.client?.name || p.title || ''}</span>`}
+</td>
+<td width="40%" align="center" valign="middle" style="padding:16px;color:#fff;">
+<div style="font-size:23px;font-weight:bold;line-height:28px;color:#fff;">Relatório Diário</div>
+<div style="font-size:14px;line-height:20px;color:#fff;margin-top:6px;">${p.title || '-'} ${p.af ? `• AF ${p.af}` : ''}</div>
+</td>
+<td width="30%" align="right" valign="middle" style="padding:16px;">
+<img src="${omnilinkLogo}" width="150" style="display:block;border:0;max-width:150px;height:auto;margin-left:auto;" />
+</td>
+</tr>
+</table>
+</td>
+</tr>
 
-            <td style="padding:14px 22px;text-align:center;width:34%;color:#fff;">
-              <h2 style="margin:0;font-size:22px;">Relatório Completo de Instalação</h2>
-              <p style="margin:6px 0 0;font-size:14px;">
-                ${p.title || '-'} ${p.af ? `• AF ${p.af}` : ''}
-              </p>
-            </td>
+<tr>
+<td style="background:#f8fafc;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;text-align:center;background:#f8fafc;">
+<tr>
+<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:18px;font-weight:bold;">${dayjs(p.startAt || p.startPlannedAt || targetDate).format('DD/MM/YYYY')}</div><div style="font-size:12px;color:#64748b;">Início</div></td>
+<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:22px;font-weight:bold;">${total}</div><div style="font-size:12px;color:#64748b;">Total</div></td>
+<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:22px;font-weight:bold;color:#16a34a;">${done}</div><div style="font-size:12px;color:#64748b;">Concluído</div></td>
+<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:22px;font-weight:bold;color:#f97316;">${pending}</div><div style="font-size:12px;color:#64748b;">Pendente</div></td>
+<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:18px;font-weight:bold;">${dayjs(targetDate).format('DD/MM/YYYY')}</div><div style="font-size:12px;color:#64748b;">Atual</div></td>
+</tr>
+</table>
+</td>
+</tr>
 
-            <td style="padding:14px 22px;text-align:right;width:33%;">
-              ${
-                omnilinkLogo
-                  ? `<img src="${omnilinkLogo}" style="max-height:58px;max-width:190px;object-fit:contain;" />`
-                  : `<strong style="font-size:22px;color:#fff;">Omnilink</strong>`
-              }
-            </td>
-          </tr>
-        </table>
+<tr>
+<td style="padding:22px 28px;background:#ffffff;">
+<p style="font-size:14px;line-height:22px;margin:0 0 14px 0;">
+<strong>${done}</strong> concluídos de <strong>${total}</strong> equipamentos.
+Percentual de conclusão: <strong>${percent}%</strong>.
+</p>
+<tr>
+  <td style="padding:0 28px 22px 28px;background:#ffffff;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+      <tr>
+        <td width="50%" align="center" style="padding:10px;border:1px solid #d1d5db;">
+          <img src="cid:chart-pie" width="330" style="display:block;border:0;width:330px;height:auto;" />
+        </td>
+        <td width="50%" align="center" style="padding:10px;border:1px solid #d1d5db;">
+          <img src="cid:chart-bar" width="330" style="display:block;border:0;width:330px;height:auto;" />
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>
+<h3 style="margin:0 0 12px 0;font-size:18px;color:#111;">Equipamentos Instalados</h3>
 
-        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;text-align:center;background:#eaf4ff;">
-          <tr>
-            <td style="padding:15px;border-bottom:1px solid #9fb3c8;">
-              <strong style="font-size:20px;">${dayjs(p.startAt || p.startPlannedAt || targetDate).format('DD/MM/YYYY')}</strong><br/>
-              <span style="font-size:13px;">Primeira Instalação</span>
-            </td>
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:#ffffff;border:1px solid #cbd5e1;">
+<thead>
+<tr style="background:#e5edf7;">
+<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Data</th>
+<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Placa</th>
+<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Série</th>
+<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Produto</th>
+<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Procedimento</th>
+<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Status</th>
+<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Unidade</th>
+<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Empresa</th>
+</tr>
+</thead>
+<tbody>
+${rows || `<tr><td colspan="8" align="center" style="padding:14px;font-size:13px;color:#64748b;">Nenhum equipamento detalhado.</td></tr>`}
+</tbody>
+</table>
+</td>
+</tr>
 
-            <td style="padding:15px;border-bottom:1px solid #9fb3c8;">
-              <strong style="font-size:24px;">📦 ${total}</strong><br/>
-              <span style="font-size:13px;">Total de Equipamentos</span>
-            </td>
+<tr>
+<td align="center" style="background:#f1f5f9;padding:14px 20px;font-size:12px;color:#64748b;">
+Mensagem automática • Portal de Supply Chain
+</td>
+</tr>
 
-            <td style="padding:15px;border-bottom:1px solid #9fb3c8;">
-              <strong style="font-size:24px;color:#16a34a;">✅ ${done}</strong><br/>
-              <span style="font-size:13px;">Concluído</span>
-            </td>
-
-            <td style="padding:15px;border-bottom:1px solid #9fb3c8;">
-              <strong style="font-size:24px;color:#f97316;">🕘 ${pending}</strong><br/>
-              <span style="font-size:13px;">Aguardando Instalação</span>
-            </td>
-
-            <td style="padding:15px;border-bottom:1px solid #9fb3c8;">
-              <strong style="font-size:20px;">${dayjs(targetDate).format('DD/MM/YYYY')}</strong><br/>
-              <span style="font-size:13px;">Última Instalação</span>
-            </td>
-          </tr>
-        </table>
-
-        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#eaf4ff;">
-          <tr>
-            <td width="50%" style="padding:18px;border-right:1px solid #9fb3c8;text-align:center;">
-              <img src="cid:chart-pie" style="max-width:100%;height:auto;display:block;margin:auto;" />
-            </td>
-            <td width="50%" style="padding:18px;text-align:center;">
-              <img src="cid:chart-bar" style="max-width:100%;height:auto;display:block;margin:auto;" />
-            </td>
-          </tr>
-        </table>
-
-        <div style="padding:20px;background:#eaf4ff;">
-          <p style="font-size:14px;margin:0 0 16px;">
-            <b>${done}</b> concluídos de <b>${total}</b> equipamentos.
-            Percentual de conclusão: <b>${percent}%</b>.
-          </p>
-
-          <h3 style="margin:0 0 12px;">Equipamentos Instalados</h3>
-
-          <table width="100%" cellpadding="7" cellspacing="0" style="border-collapse:collapse;font-size:12px;border:1px solid #111;background:#eaf4ff;">
-            <thead>
-              <tr style="background:#dbeafe;">
-                <th>Data</th>
-                <th>Placa</th>
-                <th>Série</th>
-                <th>Produto</th>
-                <th>Procedimento</th>
-                <th>Status</th>
-                <th>Unidade</th>
-                <th>Empresa</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${
-                rows ||
-                `<tr>
-                  <td colspan="8" style="text-align:center;padding:16px;">
-                    Nenhum equipamento detalhado.
-                  </td>
-                </tr>`
-              }
-            </tbody>
-          </table>
-        </div>
-
-        <div style="background:#f8fafc;padding:14px 20px;font-size:12px;color:#64748b;">
-          Mensagem automática • Portal de Supply Chain
-        </div>
-      </div>
-    </div>
-  `;
+</table>
+</td>
+</tr>
+</table>
+</body>
+</html>
+`;
 }
 function buildCompleteFinalEmailHtml(project, progressList, targetDate, finalMessage) {
   const p = project.toJSON ? project.toJSON() : project;
@@ -695,12 +680,10 @@ function buildCompleteFinalEmailHtml(project, progressList, targetDate, finalMes
     return acc + Number(pr.trucksDoneToday || pr.completedInstallations || vehiclesCount || 0);
   }, 0);
 
-  const allVehicles = progressList.flatMap((progress) => {
-    const date = progress.date;
+  const allVehicles = (progressList || []).flatMap((progress) => {
     const vehicles = Array.isArray(progress.vehicles) ? progress.vehicles : [];
-
     return vehicles.map((v) => ({
-      date,
+      date: progress.date,
       plate: v.plate || '-',
       serial: v.serial || '-',
       product: p.items?.[0]?.equipmentName || p.items?.[0]?.name || '-',
@@ -713,146 +696,130 @@ function buildCompleteFinalEmailHtml(project, progressList, targetDate, finalMes
 
   const rows = allVehicles.map((v) => `
     <tr>
-      <td>${dayjs(v.date).format('DD/MM/YYYY')}</td>
-      <td>${v.plate}</td>
-      <td>${v.serial}</td>
-      <td>${v.product}</td>
-      <td>${v.procedure}</td>
-      <td>${v.status}</td>
-      <td>${v.unit}</td>
-      <td>${v.company}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${dayjs(v.date).format('DD/MM/YYYY')}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.plate}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.serial}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.product}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.procedure}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.status}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.unit}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.company}</td>
     </tr>
   `).join('');
 
   return `
-    <div style="font-family:Arial,sans-serif;background:#eaf4ff;padding:20px;color:#111;">
-      <div style="max-width:1100px;margin:auto;background:#eaf4ff;border:1px solid #9fb3c8;border-radius:10px;overflow:hidden;">
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8" /></head>
+<body style="margin:0;padding:0;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;color:#111;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef4fb;">
+<tr>
+<td align="center" style="padding:20px 10px;">
+<table width="800" cellpadding="0" cellspacing="0" border="0" style="width:800px;background:#ffffff;border-collapse:collapse;border:1px solid #d1d5db;">
 
-        <table width="100%" cellpadding="0" cellspacing="0" style="background:${headerColor};border-collapse:collapse;">
-          <tr>
-            <td style="padding:14px 22px;text-align:left;width:33%;">
-              ${
-                clientLogo
-                  ? `<img src="${clientLogo}" style="max-height:58px;max-width:190px;object-fit:contain;" />`
-                  : `<strong style="font-size:22px;color:#fff;">${p.client?.name || p.title || ''}</strong>`
-              }
-            </td>
+<tr>
+<td style="background:${headerColor};padding:0;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:${headerColor};">
+<tr>
+<td width="30%" align="left" valign="middle" style="padding:16px;">
+${clientLogo ? `<img src="${clientLogo}" width="150" style="display:block;border:0;max-width:150px;height:auto;" />` : `<span style="font-size:20px;font-weight:bold;color:#fff;">${p.client?.name || p.title || ''}</span>`}
+</td>
+<td width="40%" align="center" valign="middle" style="padding:16px;color:#fff;">
+<div style="font-size:23px;font-weight:bold;line-height:28px;color:#fff;">Relatório Final</div>
+<div style="font-size:14px;line-height:20px;color:#fff;margin-top:6px;">${p.title || '-'} ${p.af ? `• AF ${p.af}` : ''}</div>
+</td>
+<td width="30%" align="right" valign="middle" style="padding:16px;">
+<img src="${omnilinkLogo}" width="150" style="display:block;border:0;max-width:150px;height:auto;margin-left:auto;" />
+</td>
+</tr>
+</table>
+</td>
+</tr>
 
-            <td style="padding:14px 22px;text-align:center;width:34%;color:#fff;">
-              <h2 style="margin:0;font-size:22px;">Relatório Final de Instalação</h2>
-              <p style="margin:6px 0 0;font-size:14px;">
-                ${p.title || '-'} ${p.af ? `• AF ${p.af}` : ''}
-              </p>
-            </td>
+<tr>
+<td style="background:#f8fafc;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;text-align:center;background:#f8fafc;">
+<tr>
+<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:18px;font-weight:bold;">${dayjs(p.startAt || p.startPlannedAt || targetDate).format('DD/MM/YYYY')}</div><div style="font-size:12px;color:#64748b;">Início</div></td>
+<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:22px;font-weight:bold;">${total}</div><div style="font-size:12px;color:#64748b;">Total</div></td>
+<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:22px;font-weight:bold;color:#16a34a;">${done}</div><div style="font-size:12px;color:#64748b;">Concluído</div></td>
+<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:22px;font-weight:bold;color:#f97316;">${pending}</div><div style="font-size:12px;color:#64748b;">Pendente</div></td>
+<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:18px;font-weight:bold;">${dayjs(p.endAt || targetDate).format('DD/MM/YYYY')}</div><div style="font-size:12px;color:#64748b;">Finalização</div></td>
+</tr>
+</table>
+</td>
+</tr>
 
-            <td style="padding:14px 22px;text-align:right;width:33%;">
-              ${
-                omnilinkLogo
-                  ? `<img src="${omnilinkLogo}" style="max-height:58px;max-width:190px;object-fit:contain;" />`
-                  : `<strong style="font-size:22px;color:#fff;">Omnilink</strong>`
-              }
-            </td>
-          </tr>
-        </table>
+<tr>
+<td style="padding:22px 28px;background:#ffffff;">
+<h3 style="margin:0 0 12px 0;font-size:18px;color:#111;">Resumo Final</h3>
+<tr>
+  <td style="padding:0 28px 22px 28px;background:#ffffff;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+      <tr>
+        <td width="50%" align="center" style="padding:10px;border:1px solid #d1d5db;">
+          <img src="cid:chart-pie" width="330" style="display:block;border:0;width:330px;height:auto;" />
+        </td>
+        <td width="50%" align="center" style="padding:10px;border:1px solid #d1d5db;">
+          <img src="cid:chart-bar" width="330" style="display:block;border:0;width:330px;height:auto;" />
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;border:1px solid #d1d5db;">
+<tr>
+<td width="33%" style="padding:10px;font-size:13px;border-right:1px solid #d1d5db;"><strong>Dias com lançamento:</strong><br/>${totalDays}</td>
+<td width="33%" style="padding:10px;font-size:13px;border-right:1px solid #d1d5db;"><strong>Total lançado:</strong><br/>${totalInstalled}</td>
+<td width="34%" style="padding:10px;font-size:13px;"><strong>Percentual final:</strong><br/>${percent}%</td>
+</tr>
+</table>
+${finalMessage ? `<p style="margin:14px 0 0 0;font-size:14px;line-height:22px;"><strong>Mensagem final:</strong><br/>${String(finalMessage).replace(/\n/g, '<br/>')}</p>` : `<p style="margin:14px 0 0 0;font-size:14px;line-height:22px;">Projeto finalizado. Segue abaixo o resumo completo das instalações realizadas.</p>`}
+</td>
+</tr>
 
-        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;text-align:center;background:#eaf4ff;">
-          <tr>
-            <td style="padding:15px;border-bottom:1px solid #9fb3c8;">
-              <strong style="font-size:20px;">${dayjs(p.startAt || p.startPlannedAt || targetDate).format('DD/MM/YYYY')}</strong><br/>
-              <span style="font-size:13px;">Início do Projeto</span>
-            </td>
+<tr>
+<td style="padding:0 28px 28px 28px;background:#ffffff;">
+<p style="font-size:14px;line-height:22px;margin:0 0 14px 0;">
+<strong>${done}</strong> concluídos de <strong>${total}</strong> equipamentos.
+Percentual final de conclusão: <strong>${percent}%</strong>.
+</p>
 
-            <td style="padding:15px;border-bottom:1px solid #9fb3c8;">
-              <strong style="font-size:24px;">📦 ${total}</strong><br/>
-              <span style="font-size:13px;">Total de Equipamentos</span>
-            </td>
+<h3 style="margin:0 0 12px 0;font-size:18px;color:#111;">Equipamentos Instalados</h3>
 
-            <td style="padding:15px;border-bottom:1px solid #9fb3c8;">
-              <strong style="font-size:24px;color:#16a34a;">✅ ${done}</strong><br/>
-              <span style="font-size:13px;">Concluído</span>
-            </td>
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:#ffffff;border:1px solid #cbd5e1;">
+<thead>
+<tr style="background:#e5edf7;">
+<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Data</th>
+<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Placa</th>
+<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Série</th>
+<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Produto</th>
+<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Procedimento</th>
+<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Status</th>
+<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Unidade</th>
+<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Empresa</th>
+</tr>
+</thead>
+<tbody>
+${rows || `<tr><td colspan="8" align="center" style="padding:14px;font-size:13px;color:#64748b;">Nenhum equipamento detalhado.</td></tr>`}
+</tbody>
+</table>
+</td>
+</tr>
 
-            <td style="padding:15px;border-bottom:1px solid #9fb3c8;">
-              <strong style="font-size:24px;color:#f97316;">🕘 ${pending}</strong><br/>
-              <span style="font-size:13px;">Pendente</span>
-            </td>
+<tr>
+<td align="center" style="background:#f1f5f9;padding:14px 20px;font-size:12px;color:#64748b;">
+Mensagem automática • Portal de Supply Chain
+</td>
+</tr>
 
-            <td style="padding:15px;border-bottom:1px solid #9fb3c8;">
-              <strong style="font-size:20px;">${dayjs(p.endAt || targetDate).format('DD/MM/YYYY')}</strong><br/>
-              <span style="font-size:13px;">Finalização</span>
-            </td>
-          </tr>
-        </table>
-
-        <div style="padding:18px 20px;background:#eaf4ff;border-bottom:1px solid #9fb3c8;">
-          <h3 style="margin:0 0 10px;">Resumo Final</h3>
-
-          <table width="100%" cellpadding="8" cellspacing="0" style="border-collapse:collapse;background:#fff;border:1px solid #9fb3c8;font-size:13px;">
-            <tr>
-              <td><b>Dias com lançamento:</b> ${totalDays}</td>
-              <td><b>Total lançado:</b> ${totalInstalled}</td>
-              <td><b>Percentual final:</b> ${percent}%</td>
-            </tr>
-          </table>
-
-          ${
-            finalMessage
-              ? `<p style="margin:12px 0 0;font-size:14px;"><b>Mensagem final:</b><br/>${String(finalMessage).replace(/\n/g, '<br/>')}</p>`
-              : `<p style="margin:12px 0 0;font-size:14px;">Projeto finalizado. Segue abaixo o resumo completo das instalações realizadas.</p>`
-          }
-        </div>
-
-        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#eaf4ff;">
-          <tr>
-            <td width="50%" style="padding:18px;border-right:1px solid #9fb3c8;text-align:center;">
-              <img src="cid:chart-pie" style="max-width:100%;height:auto;display:block;margin:auto;" />
-            </td>
-            <td width="50%" style="padding:18px;text-align:center;">
-              <img src="cid:chart-bar" style="max-width:100%;height:auto;display:block;margin:auto;" />
-            </td>
-          </tr>
-        </table>
-
-        <div style="padding:20px;background:#eaf4ff;">
-          <p style="font-size:14px;margin:0 0 16px;">
-            <b>${done}</b> concluídos de <b>${total}</b> equipamentos.
-            Percentual final de conclusão: <b>${percent}%</b>.
-          </p>
-
-          <h3 style="margin:0 0 12px;">Equipamentos Instalados</h3>
-
-          <table width="100%" cellpadding="7" cellspacing="0" style="border-collapse:collapse;font-size:12px;border:1px solid #111;background:#eaf4ff;">
-            <thead>
-              <tr style="background:#dbeafe;">
-                <th>Data</th>
-                <th>Placa</th>
-                <th>Série</th>
-                <th>Produto</th>
-                <th>Procedimento</th>
-                <th>Status</th>
-                <th>Unidade</th>
-                <th>Empresa</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${
-                rows ||
-                `<tr>
-                  <td colspan="8" style="text-align:center;padding:16px;">
-                    Nenhum equipamento detalhado.
-                  </td>
-                </tr>`
-              }
-            </tbody>
-          </table>
-        </div>
-
-        <div style="background:#f8fafc;padding:14px 20px;font-size:12px;color:#64748b;">
-          Mensagem automática • Portal de Supply Chain
-        </div>
-      </div>
-    </div>
-  `;
+</table>
+</td>
+</tr>
+</table>
+</body>
+</html>
+`;
 }
 function buildStartEmailHtml(project) {
   const p = project.toJSON ? project.toJSON() : project;
@@ -860,7 +827,7 @@ function buildStartEmailHtml(project) {
   const total = Number(p.trucksTotal || p.equipmentsTotal || 0);
   const perDay = Number(p.equipmentsPerDay || 0);
 
-  const headerColor = p.dailyReportHeaderColor || '#5b3cc4';
+  const headerColor = p.dailyReportHeaderColor || '#2f7dbd';
 
   const clientLogo = p.dailyReportClientLogoUrl || '';
   const omnilinkLogo =
@@ -870,134 +837,180 @@ function buildStartEmailHtml(project) {
   const startDate = p.startPlannedAt || p.startAt;
   const endDate = p.endPlannedAt || p.endAt;
 
-  const items = (p.items || []).map(item => `
-    <tr>
-      <td style="padding:8px;border-bottom:1px solid #475569;">
-        ${item.equipmentName || item.name || '-'}
-      </td>
-      <td style="padding:8px;border-bottom:1px solid #475569;text-align:center;">
-        ${item.qty || item.quantity || 0}
-      </td>
-    </tr>
-  `).join('');
-
-  return `
-  <div style="font-family:Arial,sans-serif;background:#2b2f33;padding:20px;color:#fff;">
-    <div style="max-width:1100px;margin:auto;background:#3a3f45;border-radius:12px;overflow:hidden;">
-
-        <!-- HEADER -->
-        <table width="100%" cellpadding="0" cellspacing="0" style="background:${headerColor};color:#fff;border-collapse:collapse;">
-          <tr>
-            <td style="padding:14px 22px;text-align:left;width:33%;vertical-align:middle;">
-              ${
-                clientLogo
-                  ? `<img src="${clientLogo}" style="max-height:58px;max-width:190px;object-fit:contain;display:block;" />`
-                  : `<strong style="font-size:22px;color:#fff;">${p.client?.name || p.title || ''}</strong>`
-              }
-            </td>
-
-            <td style="padding:14px 22px;text-align:center;width:34%;color:#fff;vertical-align:middle;">
-              <h2 style="margin:0;font-size:22px;line-height:1.2;">Início do Projeto</h2>
-              <p style="margin:6px 0 0;font-size:14px;line-height:1.3;">
-                ${p.title || '-'} ${p.af ? `• AF ${p.af}` : ''}
-              </p>
-            </td>
-
-            <td style="padding:14px 22px;text-align:right;width:33%;vertical-align:middle;">
-              ${
-                omnilinkLogo
-                  ? `<img src="${omnilinkLogo}" style="max-height:58px;max-width:190px;object-fit:contain;display:block;margin-left:auto;" />`
-                  : `<strong style="font-size:22px;color:#fff;">Omnilink</strong>`
-              }
-            </td>
-          </tr>
-        </table>
-
-      <!-- CARDS -->
-      <table width="100%" style="background:#3a3f45;text-align:center;">
+  const items = (p.items || [])
+    .map(
+      (item) => `
         <tr>
-          <td style="padding:16px;">
-            <strong style="font-size:20px;">
-              ${startDate ? require('dayjs')(startDate).format('DD/MM/YYYY') : '-'}
-            </strong><br/>
-            <span>Início</span>
+          <td style="padding:10px;border-bottom:1px solid #d1d5db;font-size:13px;color:#111;">
+            ${item.equipmentName || item.name || '-'}
           </td>
-
-          <td style="padding:16px;">
-            📦 <strong style="font-size:22px;">${total}</strong><br/>
-            <span>Total Equipamentos</span>
-          </td>
-
-          <td style="padding:16px;">
-            ⚙️ <strong style="font-size:22px;">${perDay || '-'}</strong><br/>
-            <span>Meta diária</span>
-          </td>
-
-          <td style="padding:16px;">
-            📅 <strong style="font-size:20px;">
-              ${endDate ? require('dayjs')(endDate).format('DD/MM/YYYY') : '-'}
-            </strong><br/>
-            <span>Previsão término</span>
+          <td align="center" style="padding:10px;border-bottom:1px solid #d1d5db;font-size:13px;color:#111;">
+            ${item.qty || item.quantity || 0}
           </td>
         </tr>
-      </table>
+      `
+    )
+    .join('');
 
-      <!-- TEXTO -->
-      <div style="padding:20px;">
-        <p>Prezado(a),</p>
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+</head>
 
-        <p>
-          É com satisfação que informamos o início do projeto 
-          <b>${p.title}</b> ${p.af ? `(AF ${p.af})` : ''}.
-        </p>
+<body style="margin:0;padding:0;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef4fb;margin:0;padding:0;">
+    <tr>
+      <td align="center" style="padding:20px 10px;">
 
-        <p>
-          Agradecemos a confiança depositada em nossa equipe. Nosso objetivo é garantir
-          uma execução eficiente, segura e com total transparência durante todas as etapas da instalação.
-        </p>
+        <table width="800" cellpadding="0" cellspacing="0" border="0" style="width:800px;background:#ffffff;border-collapse:collapse;border:1px solid #d1d5db;">
 
-        <p>
-          Abaixo você encontra o resumo do escopo do projeto e os equipamentos previstos.
-          Durante a execução, você receberá relatórios diários com o progresso das atividades.
-        </p>
+          <tr>
+            <td style="background:${headerColor};padding:0;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:${headerColor};">
+                <tr>
+                  <td width="30%" align="left" valign="middle" style="padding:16px;">
+                    ${
+                      clientLogo
+                        ? `<img src="${clientLogo}" width="150" style="display:block;border:0;outline:none;text-decoration:none;max-width:150px;height:auto;" />`
+                        : `<span style="font-size:20px;font-weight:bold;color:#ffffff;">${p.client?.name || p.title || ''}</span>`
+                    }
+                  </td>
 
-        <p>
-          Permanecemos à disposição para quaisquer dúvidas.
-        </p>
+                  <td width="40%" align="center" valign="middle" style="padding:16px;color:#ffffff;">
+                    <div style="font-size:24px;font-weight:bold;line-height:28px;color:#ffffff;">
+                      Início do Projeto
+                    </div>
+                    <div style="font-size:14px;line-height:20px;color:#ffffff;margin-top:6px;">
+                      ${p.title || '-'} ${p.af ? `• AF ${p.af}` : ''}
+                    </div>
+                  </td>
 
-        <p>
-          Atenciosamente,<br/>
-          <b>Equipe Omnilink</b>
-        </p>
-      </div>
+                  <td width="30%" align="right" valign="middle" style="padding:16px;">
+                    ${
+                      omnilinkLogo
+                        ? `<img src="${omnilinkLogo}" width="150" style="display:block;border:0;outline:none;text-decoration:none;max-width:150px;height:auto;margin-left:auto;" />`
+                        : `<span style="font-size:20px;font-weight:bold;color:#ffffff;">Omnilink</span>`
+                    }
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-      <!-- TABELA -->
-      <div style="padding:20px;">
-        <h3>Equipamentos previstos para instalação</h3>
+          <tr>
+            <td style="background:#f8fafc;padding:0;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;text-align:center;background:#f8fafc;">
+                <tr>
+                  <td width="25%" align="center" style="padding:18px;border-bottom:1px solid #d1d5db;">
+                    <div style="font-size:20px;font-weight:bold;color:#111;">
+                      ${startDate ? dayjs(startDate).format('DD/MM/YYYY') : '-'}
+                    </div>
+                    <div style="font-size:13px;color:#64748b;margin-top:4px;">Início</div>
+                  </td>
 
-        <table width="100%" style="border-collapse:collapse;background:#2b2f33;">
-          <thead>
-            <tr style="background:#4b5563;">
-              <th style="padding:8px;">Equipamento</th>
-              <th style="padding:8px;">Quantidade</th>
-            </tr>
-          </thead>
+                  <td width="25%" align="center" style="padding:18px;border-bottom:1px solid #d1d5db;">
+                    <div style="font-size:22px;font-weight:bold;color:#111;">
+                      ${total}
+                    </div>
+                    <div style="font-size:13px;color:#64748b;margin-top:4px;">Total Equipamentos</div>
+                  </td>
 
-          <tbody>
-            ${
-              items ||
-              `<tr><td colspan="2" style="text-align:center;padding:12px;">Nenhum item cadastrado</td></tr>`
-            }
-          </tbody>
+                  <td width="25%" align="center" style="padding:18px;border-bottom:1px solid #d1d5db;">
+                    <div style="font-size:22px;font-weight:bold;color:#111;">
+                      ${perDay || '-'}
+                    </div>
+                    <div style="font-size:13px;color:#64748b;margin-top:4px;">Meta diária</div>
+                  </td>
+
+                  <td width="25%" align="center" style="padding:18px;border-bottom:1px solid #d1d5db;">
+                    <div style="font-size:20px;font-weight:bold;color:#111;">
+                      ${endDate ? dayjs(endDate).format('DD/MM/YYYY') : '-'}
+                    </div>
+                    <div style="font-size:13px;color:#64748b;margin-top:4px;">Previsão término</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:24px 28px;background:#ffffff;color:#111;font-size:14px;line-height:22px;">
+              <p style="margin:0 0 14px 0;">Prezado(a),</p>
+
+              <p style="margin:0 0 14px 0;">
+                É com satisfação que informamos o início do projeto
+                <strong>${p.title || '-'}</strong> ${p.af ? `(AF ${p.af})` : ''}.
+              </p>
+
+              <p style="margin:0 0 14px 0;">
+                Agradecemos a confiança depositada em nossa equipe. Nosso objetivo é garantir
+                uma execução eficiente, segura e com total transparência durante todas as etapas da instalação.
+              </p>
+
+              <p style="margin:0 0 14px 0;">
+                Abaixo você encontra o resumo do escopo do projeto e os equipamentos previstos.
+                Durante a execução, você receberá relatórios diários com o progresso das atividades.
+              </p>
+
+              <p style="margin:0 0 14px 0;">
+                Permanecemos à disposição para quaisquer dúvidas.
+              </p>
+
+              <p style="margin:0;">
+                Atenciosamente,<br/>
+                <strong>Equipe Omnilink</strong>
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:0 28px 28px 28px;background:#ffffff;">
+              <h3 style="margin:0 0 12px 0;font-size:18px;color:#111;">
+                Equipamentos previstos para instalação
+              </h3>
+
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;border:1px solid #d1d5db;background:#ffffff;">
+                <thead>
+                  <tr style="background:#e5edf7;">
+                    <th align="left" style="padding:10px;font-size:13px;color:#111;border-bottom:1px solid #d1d5db;">
+                      Equipamento
+                    </th>
+                    <th align="center" style="padding:10px;font-size:13px;color:#111;border-bottom:1px solid #d1d5db;width:120px;">
+                      Quantidade
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  ${
+                    items ||
+                    `<tr>
+                      <td colspan="2" align="center" style="padding:14px;font-size:13px;color:#64748b;">
+                        Nenhum item cadastrado
+                      </td>
+                    </tr>`
+                  }
+                </tbody>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="background:#f1f5f9;padding:14px 20px;font-size:12px;color:#64748b;">
+              Portal de Supply Chain • Omnilink
+            </td>
+          </tr>
+
         </table>
-      </div>
 
-      <!-- FOOTER -->
-      <div style="background:#2b2f33;padding:12px;font-size:12px;text-align:center;">
-        Portal de Supply Chain • Omnilink
-      </div>
-    </div>
-  </div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
   `;
 }
 
@@ -2282,37 +2295,6 @@ async importBaseExcel(req, res) {
   // E-mails
   // =========================================================
 
-  async sendStartEmail(req, res) {
-    const schema = emailSendSchema.keys({
-      message: Joi.string().allow('', null),
-    });
-
-    const { error, value } = schema.validate(req.body || {});
-    if (error) return bad(res, error.message);
-
-    const project = await loadProjectWithDetails(req.params.id);
-    if (!project) return notFound(res, 'Projeto não encontrado');
-
-    const p = project.toJSON ? project.toJSON() : project;
-
-    const to = normalizeEmailList(value.emailTo || p.contactEmails || p.contactEmail);
-    if (!to.length) {
-      return bad(res, 'Projeto sem e-mail de contato');
-    }
-
-    const subject = `INÍCIO • ${p.title}${p.af ? ` • ${p.af}` : ''}`;
-    const html = buildStartEmailHtml(p, value.message);
-
-    await sendMail({
-      to,
-      cc: value.emailCc?.length ? value.emailCc : undefined,
-      subject,
-      html,
-      replyTo: process.env.MAIL_REPLY_TO || undefined,
-    });
-
-    return ok(res, { sent: true, to });
-  },
 
   async deleteDailyReportLogo(req, res) {
     try {
@@ -2351,7 +2333,6 @@ async importBaseExcel(req, res) {
       return bad(res, err.message || 'Erro ao remover logo');
     }
   },
-
   async uploadDailyReportLogo(req, res) {
     const project = await InstallationProject.findByPk(req.params.id);
     if (!project) return notFound(res, 'Projeto não encontrado');
@@ -2371,260 +2352,231 @@ async importBaseExcel(req, res) {
       dailyReportClientLogoUrl: logoUrl,
     });
   },
-async sendDailyEmail(req, res) {
-  const schema = emailSendSchema.keys({
-    date: Joi.string().allow('', null),
-    reportType: Joi.string().valid('simple', 'complete').default('simple'),
-    sendAll: Joi.boolean().default(false),
-
-    dailyReportColorDone: Joi.string().allow('', null),
-    dailyReportColorPending: Joi.string().allow('', null),
-    dailyReportHeaderColor: Joi.string().allow('', null),
-    dailyReportClientLogoUrl: Joi.string().allow('', null),
-    dailyReportOmnilinkLogoUrl: Joi.string().allow('', null),
-  });
-
-  const { error, value } = schema.validate(req.body || {});
-  if (error) return bad(res, error.message);
-
-  try {
-    const project = await InstallationProject.findByPk(req.params.id, {
-      include: [
-        { model: Client, as: 'client', attributes: ['id', 'name'] },
-        { model: InstallationProjectItem, as: 'items', required: false },
-      ],
+  async sendDailyEmail(req, res) {
+    const schema = emailSendSchema.keys({
+      date: Joi.string().allow('', null),
+      reportType: Joi.string().valid('simple', 'complete').default('simple'),
+      sendAll: Joi.boolean().default(false),
+      dailyReportColorDone: Joi.string().allow('', null),
+      dailyReportColorPending: Joi.string().allow('', null),
+      dailyReportHeaderColor: Joi.string().allow('', null),
+      dailyReportClientLogoUrl: Joi.string().allow('', null),
+      dailyReportOmnilinkLogoUrl: Joi.string().allow('', null),
     });
 
-    if (!project) return notFound(res, 'Projeto não encontrado');
+    const { error, value } = schema.validate(req.body || {});
+    if (error) return bad(res, error.message);
 
-    const to = normalizeEmailList(
-      value.emailTo || project.contactEmails || project.contactEmail
-    );
-
-    if (!to.length) return bad(res, 'Projeto sem e-mail de contato');
-
-    const targetDate = value.date
-      ? String(value.date).slice(0, 10)
-      : dayjs().format('YYYY-MM-DD');
-
-    if (!dayjs(targetDate, 'YYYY-MM-DD', true).isValid()) {
-      return bad(res, 'date inválido. Use YYYY-MM-DD');
-    }
-
-    const whereProgress = {
-      projectId: project.id,
-    };
-
-    if (!value.sendAll) {
-      whereProgress.date = targetDate;
-    }
-
-    const progressList = await InstallationProjectProgress.findAll({
-      where: whereProgress,
-      order: [['date', 'ASC'], ['id', 'ASC']],
-      include: [
-        { model: User, as: 'author', attributes: ['id', 'name'] },
-        { model: InstallationProjectProgressVehicle, as: 'vehicles' },
-      ],
-    });
-
-    const p = project.toJSON ? project.toJSON() : project;
-
-    p.dailyReportColorDone =
-      value.dailyReportColorDone || p.dailyReportColorDone || '#00c853';
-
-    p.dailyReportColorPending =
-      value.dailyReportColorPending || p.dailyReportColorPending || '#2f7dbd';
-
-    p.dailyReportHeaderColor =
-      value.dailyReportHeaderColor || p.dailyReportHeaderColor || '#2f7dbd';
-
-    p.dailyReportClientLogoUrl =
-      value.dailyReportClientLogoUrl || p.dailyReportClientLogoUrl || null;
-
-    p.dailyReportOmnilinkLogoUrl =
-      value.dailyReportOmnilinkLogoUrl ||
-      p.dailyReportOmnilinkLogoUrl ||
-      'https://app.projetos-rc.online/logo_branca.png';
-
-    let html;
-    let attachments = [];
-
-    if (value.reportType === 'complete') {
-      const charts = await generateCharts(p, progressList, {
-        colorDone: p.dailyReportColorDone,
-        colorPending: p.dailyReportColorPending,
+    try {
+      const project = await InstallationProject.findByPk(req.params.id, {
+        include: [
+          { model: Client, as: 'client', attributes: ['id', 'name'] },
+          { model: InstallationProjectItem, as: 'items', required: false },
+        ],
       });
 
-      html = buildCompleteDailyEmailHtml(p, progressList, targetDate);
+      if (!project) return notFound(res, 'Projeto não encontrado');
 
-      attachments = [
-        {
-          filename: 'grafico-percentual.png',
-          content: charts.pie,
-          cid: 'chart-pie',
-          contentType: 'image/png',
-        },
-        {
-          filename: 'grafico-equipamentos.png',
-          content: charts.bar,
-          cid: 'chart-bar',
-          contentType: 'image/png',
-        },
-      ];
-    } else {
-      html = dailyEmailHtml(p, progressList, targetDate);
-    }
+      const to = normalizeEmailList(value.emailTo || project.contactEmails || project.contactEmail);
+      if (!to.length) return bad(res, 'Projeto sem e-mail de contato');
 
+      const targetDate = value.date ? String(value.date).slice(0, 10) : dayjs().format('YYYY-MM-DD');
+      if (!dayjs(targetDate, 'YYYY-MM-DD', true).isValid()) {
+        return bad(res, 'date inválido. Use YYYY-MM-DD');
+      }
 
-    const result = await sendMail({
-      to,
-      cc: value.emailCc?.length ? value.emailCc : undefined,
-      subject:
+      const whereProgress = { projectId: project.id };
+      if (!value.sendAll) whereProgress.date = targetDate;
+
+      const progressList = await InstallationProjectProgress.findAll({
+        where: whereProgress,
+        order: [['date', 'ASC'], ['id', 'ASC']],
+        include: [
+          { model: User, as: 'author', attributes: ['id', 'name'] },
+          { model: InstallationProjectProgressVehicle, as: 'vehicles' },
+        ],
+      });
+
+      const p = project.toJSON ? project.toJSON() : project;
+
+      p.dailyReportHeaderColor = value.dailyReportHeaderColor || p.dailyReportHeaderColor || '#2f7dbd';
+      p.dailyReportClientLogoUrl = value.dailyReportClientLogoUrl || p.dailyReportClientLogoUrl || null;
+      p.dailyReportOmnilinkLogoUrl = value.dailyReportOmnilinkLogoUrl || p.dailyReportOmnilinkLogoUrl || 'https://app.projetos-rc.online/logo_branca.png';
+
+      const html =
         value.reportType === 'complete'
-          ? `Relatório Completo • ${project.title}${project.af ? ` • ${project.af}` : ''}`
-          : `Reporte Diário • ${project.title}${project.af ? ` • ${project.af}` : ''} • ${targetDate}`,
-      html,
-      attachments,
-      replyTo: process.env.MAIL_REPLY_TO || undefined,
+          ? buildCompleteDailyEmailHtml(p, progressList, targetDate)
+          : dailyEmailHtml(p, progressList, targetDate);
+
+      let attachments = [];
+
+      if (value.reportType === 'complete') {
+        const charts = await generateCharts(p, progressList, {
+          colorDone: value.dailyReportColorDone || p.dailyReportColorDone || '#00c853',
+          colorPending: value.dailyReportColorPending || p.dailyReportColorPending || '#2f7dbd',
+        });
+
+        attachments = [
+          {
+            filename: 'grafico-percentual.png',
+            content: charts.pie,
+            cid: 'chart-pie',
+            contentType: 'image/png',
+          },
+          {
+            filename: 'grafico-equipamentos.png',
+            content: charts.bar,
+            cid: 'chart-bar',
+            contentType: 'image/png',
+          },
+        ];
+      }
+
+      const result = await sendMail({
+        to,
+        cc: value.emailCc?.length ? value.emailCc : undefined,
+        subject:
+          value.reportType === 'complete'
+            ? `Relatório Completo • ${project.title}${project.af ? ` • ${project.af}` : ''}`
+            : `Reporte Diário • ${project.title}${project.af ? ` • ${project.af}` : ''} • ${targetDate}`,
+        html,
+        attachments,
+        replyTo: process.env.MAIL_REPLY_TO || undefined,
+      });
+
+      await project.update({ dailyReportLastSentAt: new Date() });
+
+      return ok(res, {
+        sent: true,
+        to,
+        targetDate,
+        reportType: value.reportType,
+        sendAll: value.sendAll,
+        count: progressList.length,
+        smtp: {
+          accepted: result?.accepted || [],
+          rejected: result?.rejected || [],
+          response: result?.response || null,
+          messageId: result?.messageId || null,
+        },
+      });
+    } catch (err) {
+      console.error('sendDailyEmail error:', err);
+      return bad(res, err.message || 'Erro ao enviar reporte diário');
+    }
+  },
+  async sendFinalEmail(req, res) {
+    const schema = emailSendSchema.keys({
+      procedures: Joi.string().allow('', null),
+      finalMessage: Joi.string().allow('', null),
+      dailyReportColorDone: Joi.string().allow('', null),
+      dailyReportColorPending: Joi.string().allow('', null),
+      dailyReportHeaderColor: Joi.string().allow('', null),
+      dailyReportClientLogoUrl: Joi.string().allow('', null),
+      dailyReportOmnilinkLogoUrl: Joi.string().allow('', null),
     });
 
+    const { error, value } = schema.validate(req.body || {});
+    if (error) return bad(res, error.message);
 
-    await project.update({
-      dailyReportLastSentAt: new Date(),
+    try {
+      const project = await loadProjectWithDetails(req.params.id);
+      if (!project) return notFound(res, 'Projeto não encontrado');
+
+      const p = project.toJSON ? project.toJSON() : project;
+
+      const to = normalizeEmailList(value.emailTo || p.contactEmails || p.contactEmail);
+      if (!to.length) return bad(res, 'Projeto sem e-mail de contato');
+
+      const progressList = Array.isArray(p.progress) ? p.progress : [];
+      progressList.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      p.dailyReportHeaderColor = value.dailyReportHeaderColor || p.dailyReportHeaderColor || '#2f7dbd';
+      p.dailyReportClientLogoUrl = value.dailyReportClientLogoUrl || p.dailyReportClientLogoUrl || null;
+      p.dailyReportOmnilinkLogoUrl = value.dailyReportOmnilinkLogoUrl || p.dailyReportOmnilinkLogoUrl || 'https://app.projetos-rc.online/logo_branca.png';
+
+      const targetDate = dayjs().format('YYYY-MM-DD');
+
+      const html = buildCompleteFinalEmailHtml(
+        p,
+        progressList,
+        targetDate,
+        value.finalMessage || value.procedures
+      );
+        const charts = await generateCharts(p, progressList, {
+          colorDone: value.dailyReportColorDone || p.dailyReportColorDone || '#00c853',
+          colorPending: value.dailyReportColorPending || p.dailyReportColorPending || '#2f7dbd',
+        });
+
+        const result = await sendMail({
+          to,
+          cc: value.emailCc?.length ? value.emailCc : undefined,
+          subject: `Relatório Final Completo • ${p.title}${p.af ? ` • ${p.af}` : ''}`,
+          html,
+          attachments: [
+            {
+              filename: 'grafico-percentual-final.png',
+              content: charts.pie,
+              cid: 'chart-pie',
+              contentType: 'image/png',
+            },
+            {
+              filename: 'grafico-equipamentos-final.png',
+              content: charts.bar,
+              cid: 'chart-bar',
+              contentType: 'image/png',
+            },
+          ],
+          replyTo: process.env.MAIL_REPLY_TO || undefined,
+        });
+
+      return ok(res, {
+        sent: true,
+        to,
+        reportType: 'complete',
+        finalReport: true,
+        count: progressList.length,
+        smtp: {
+          accepted: result?.accepted || [],
+          rejected: result?.rejected || [],
+          response: result?.response || null,
+          messageId: result?.messageId || null,
+        },
+      });
+    } catch (err) {
+      console.error('sendFinalEmail error:', err);
+      return bad(res, err.message || 'Erro ao enviar relatório final');
+    }
+  },
+  async sendStartEmail(req, res) {
+    const schema = emailSendSchema.keys({
+      message: Joi.string().allow('', null),
     });
 
-    return ok(res, {
-      sent: true,
-      to,
-      targetDate,
-      reportType: value.reportType,
-      sendAll: value.sendAll,
-      count: progressList.length,
-      smtp: {
-        accepted: result?.accepted || [],
-        rejected: result?.rejected || [],
-        response: result?.response || null,
-        messageId: result?.messageId || null,
-      },
-    });
-  } catch (err) {
-    console.error('sendDailyEmail error:', {
-      message: err.message,
-      code: err.code,
-      command: err.command,
-      response: err.response,
-      stack: err.stack,
-    });
+    const { error, value } = schema.validate(req.body || {});
+    if (error) return bad(res, error.message);
 
-    return bad(res, err.message || 'Erro ao enviar reporte diário');
-  }
-},
-
-async sendFinalEmail(req, res) {
-  const schema = emailSendSchema.keys({
-    procedures: Joi.string().allow('', null),
-    finalMessage: Joi.string().allow('', null),
-
-    dailyReportColorDone: Joi.string().allow('', null),
-    dailyReportColorPending: Joi.string().allow('', null),
-    dailyReportHeaderColor: Joi.string().allow('', null),
-    dailyReportClientLogoUrl: Joi.string().allow('', null),
-    dailyReportOmnilinkLogoUrl: Joi.string().allow('', null),
-  });
-
-  const { error, value } = schema.validate(req.body || {});
-  if (error) return bad(res, error.message);
-
-  try {
     const project = await loadProjectWithDetails(req.params.id);
     if (!project) return notFound(res, 'Projeto não encontrado');
 
     const p = project.toJSON ? project.toJSON() : project;
 
     const to = normalizeEmailList(value.emailTo || p.contactEmails || p.contactEmail);
-    if (!to.length) return bad(res, 'Projeto sem e-mail de contato');
+    if (!to.length) {
+      return bad(res, 'Projeto sem e-mail de contato');
+    }
 
-    const progressList = Array.isArray(p.progress) ? p.progress : [];
-    progressList.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const subject = `INÍCIO • ${p.title}${p.af ? ` • ${p.af}` : ''}`;
+    const html = buildStartEmailHtml(p, value.message);
 
-    p.dailyReportColorDone =
-      value.dailyReportColorDone || p.dailyReportColorDone || '#00c853';
-
-    p.dailyReportColorPending =
-      value.dailyReportColorPending || p.dailyReportColorPending || '#2f7dbd';
-
-    p.dailyReportHeaderColor =
-      value.dailyReportHeaderColor || p.dailyReportHeaderColor || '#2f7dbd';
-
-    p.dailyReportClientLogoUrl =
-      value.dailyReportClientLogoUrl || p.dailyReportClientLogoUrl || null;
-
-    p.dailyReportOmnilinkLogoUrl =
-      value.dailyReportOmnilinkLogoUrl ||
-      p.dailyReportOmnilinkLogoUrl ||
-      'https://app.projetos-rc.online/logo_branca.png';
-
-    const charts = await generateCharts(p, progressList, {
-      colorDone: p.dailyReportColorDone,
-      colorPending: p.dailyReportColorPending,
-    });
-
-    const targetDate = dayjs().format('YYYY-MM-DD');
-
-    const html = buildCompleteFinalEmailHtml(
-      p,
-      progressList,
-      targetDate,
-      value.finalMessage || value.procedures
-    );
-
-    const result = await sendMail({
+    await sendMail({
       to,
       cc: value.emailCc?.length ? value.emailCc : undefined,
-      subject: `Relatório Final Completo • ${p.title}${p.af ? ` • ${p.af}` : ''}`,
+      subject,
       html,
-      attachments: [
-        {
-          filename: 'grafico-percentual-final.png',
-          content: charts.pie,
-          cid: 'chart-pie',
-          contentType: 'image/png',
-        },
-        {
-          filename: 'grafico-equipamentos-final.png',
-          content: charts.bar,
-          cid: 'chart-bar',
-          contentType: 'image/png',
-        },
-      ],
       replyTo: process.env.MAIL_REPLY_TO || undefined,
     });
 
-    return ok(res, {
-      sent: true,
-      to,
-      reportType: 'complete',
-      finalReport: true,
-      count: progressList.length,
-      smtp: {
-        accepted: result?.accepted || [],
-        rejected: result?.rejected || [],
-        response: result?.response || null,
-        messageId: result?.messageId || null,
-      },
-    });
-  } catch (err) {
-    console.error('sendFinalEmail error:', {
-      message: err.message,
-      code: err.code,
-      command: err.command,
-      response: err.response,
-      stack: err.stack,
-    });
-
-    return bad(res, err.message || 'Erro ao enviar relatório final');
-  }
-},
-
+    return ok(res, { sent: true, to });
+  },
 };
