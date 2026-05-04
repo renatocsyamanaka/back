@@ -498,26 +498,29 @@ async function loadDashboardProjects(filters = {}, options = {}) {
   const startDate = parseDate(filters.startDate);
   const endDate = parseDate(filters.endDate);
 
-  if (!options.ignorePeriod && (startDate || endDate)) {
-    rows = rows.filter((p) => {
-      const projectMatches = overlapPeriod(
-        p.startPlannedAt || p.startAt,
-        p.endPlannedAt || p.endAt,
-        startDate,
-        endDate
-      );
+if (!options.ignorePeriod && (startDate || endDate)) {
+  rows = rows.filter((p) => {
+    // Data principal do projeto para o dashboard
+    // Prioridade: saleDate > startPlannedAt > startAt > createdAt
+    const referenceDate =
+      dateOnly(p.saleDate) ||
+      dateOnly(p.startPlannedAt) ||
+      dateOnly(p.startAt) ||
+      dateOnly(p.createdAt);
 
-      const hasProgressInRange = safeArray(p.progress).some((progress) => {
-        const d = dateOnly(progress.date);
-        if (!d) return false;
-        if (startDate && dayjs(d).isBefore(dayjs(startDate), 'day')) return false;
-        if (endDate && dayjs(d).isAfter(dayjs(endDate), 'day')) return false;
-        return true;
-      });
+    if (!referenceDate) return false;
 
-      return projectMatches || hasProgressInRange;
-    });
-  }
+    if (startDate && dayjs(referenceDate).isBefore(dayjs(startDate), 'day')) {
+      return false;
+    }
+
+    if (endDate && dayjs(referenceDate).isAfter(dayjs(endDate), 'day')) {
+      return false;
+    }
+
+    return true;
+  });
+}
 
   if (
     String(filters.delayed) === 'true' ||

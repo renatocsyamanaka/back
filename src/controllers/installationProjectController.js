@@ -537,11 +537,12 @@ function buildCompleteDailyEmailHtml(project, progressList, targetDate) {
 
   const allVehicles = (progressList || []).flatMap((progress) => {
     const vehicles = Array.isArray(progress.vehicles) ? progress.vehicles : [];
+
     return vehicles.map((v) => ({
       date: progress.date,
       plate: v.plate || '-',
       serial: v.serial || '-',
-      product: p.items?.[0]?.equipmentName || '-',
+      product: p.items?.[0]?.equipmentName || p.items?.[0]?.name || '-',
       procedure: 'Instalação',
       status: 'Concluído',
       unit: p.requestedCity || p.requestedLocationText || '-',
@@ -551,112 +552,157 @@ function buildCompleteDailyEmailHtml(project, progressList, targetDate) {
 
   const rows = allVehicles.map((v) => `
     <tr>
-      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${dayjs(v.date).format('DD/MM/YYYY')}</td>
-      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.plate}</td>
-      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.serial}</td>
-      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.product}</td>
-      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.procedure}</td>
-      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.status}</td>
-      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.unit}</td>
-      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.company}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${dayjs(v.date).format('DD/MM/YYYY')}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.plate}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.serial}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.product}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.procedure}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.status}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.unit}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.company}</td>
     </tr>
   `).join('');
 
   return `
 <!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8" /></head>
+<head>
+  <meta charset="UTF-8" />
+</head>
+
 <body style="margin:0;padding:0;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;color:#111;">
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef4fb;">
-<tr>
-<td align="center" style="padding:20px 10px;">
-<table width="800" cellpadding="0" cellspacing="0" border="0" style="width:800px;background:#ffffff;border-collapse:collapse;border:1px solid #d1d5db;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef4fb;">
+    <tr>
+      <td align="center" style="padding:20px 10px;">
 
-<tr>
-<td style="background:${headerColor};padding:0;">
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:${headerColor};">
-<tr>
-<td width="30%" align="left" valign="middle" style="padding:16px;">
-${clientLogo ? `<img src="${clientLogo}" width="150" style="display:block;border:0;max-width:150px;height:auto;" />` : `<span style="font-size:20px;font-weight:bold;color:#fff;">${p.client?.name || p.title || ''}</span>`}
-</td>
-<td width="40%" align="center" valign="middle" style="padding:16px;color:#fff;">
-<div style="font-size:23px;font-weight:bold;line-height:28px;color:#fff;">Relatório Diário</div>
-<div style="font-size:14px;line-height:20px;color:#fff;margin-top:6px;">${p.title || '-'} ${p.af ? `• AF ${p.af}` : ''}</div>
-</td>
-<td width="30%" align="right" valign="middle" style="padding:16px;">
-<img src="${omnilinkLogo}" width="150" style="display:block;border:0;max-width:150px;height:auto;margin-left:auto;" />
-</td>
-</tr>
-</table>
-</td>
-</tr>
+        <table width="800" cellpadding="0" cellspacing="0" border="0" style="width:800px;background:#ffffff;border-collapse:collapse;border:1px solid #d1d5db;">
 
-<tr>
-<td style="background:#f8fafc;">
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;text-align:center;background:#f8fafc;">
-<tr>
-<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:18px;font-weight:bold;">${dayjs(p.startAt || p.startPlannedAt || targetDate).format('DD/MM/YYYY')}</div><div style="font-size:12px;color:#64748b;">Início</div></td>
-<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:22px;font-weight:bold;">${total}</div><div style="font-size:12px;color:#64748b;">Total</div></td>
-<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:22px;font-weight:bold;color:#16a34a;">${done}</div><div style="font-size:12px;color:#64748b;">Concluído</div></td>
-<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:22px;font-weight:bold;color:#f97316;">${pending}</div><div style="font-size:12px;color:#64748b;">Pendente</div></td>
-<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:18px;font-weight:bold;">${dayjs(targetDate).format('DD/MM/YYYY')}</div><div style="font-size:12px;color:#64748b;">Atual</div></td>
-</tr>
-</table>
-</td>
-</tr>
+          <tr>
+            <td style="background:${headerColor};padding:0;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:${headerColor};">
+                <tr>
+                  <td width="30%" align="left" valign="middle" style="padding:16px;">
+                    ${
+                      clientLogo
+                        ? `<img src="${clientLogo}" width="150" style="display:block;border:0;max-width:150px;height:auto;" />`
+                        : `<span style="font-size:20px;font-weight:bold;color:#ffffff;">${p.client?.name || p.title || ''}</span>`
+                    }
+                  </td>
 
-<tr>
-<td style="padding:22px 28px;background:#ffffff;">
-<p style="font-size:14px;line-height:22px;margin:0 0 14px 0;">
-<strong>${done}</strong> concluídos de <strong>${total}</strong> equipamentos.
-Percentual de conclusão: <strong>${percent}%</strong>.
-</p>
-<tr>
-  <td style="padding:0 28px 22px 28px;background:#ffffff;">
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
-      <tr>
-        <td width="50%" align="center" style="padding:10px;border:1px solid #d1d5db;">
-          <img src="cid:chart-pie" width="330" style="display:block;border:0;width:330px;height:auto;" />
-        </td>
-        <td width="50%" align="center" style="padding:10px;border:1px solid #d1d5db;">
-          <img src="cid:chart-bar" width="330" style="display:block;border:0;width:330px;height:auto;" />
-        </td>
-      </tr>
-    </table>
-  </td>
-</tr>
-<h3 style="margin:0 0 12px 0;font-size:18px;color:#111;">Equipamentos Instalados</h3>
+                  <td width="40%" align="center" valign="middle" style="padding:16px;color:#ffffff;">
+                    <div style="font-size:23px;font-weight:bold;line-height:28px;color:#ffffff;">
+                      Relatório Diário
+                    </div>
+                    <div style="font-size:14px;line-height:20px;color:#ffffff;margin-top:6px;">
+                      ${p.title || '-'} ${p.af ? `• AF ${p.af}` : ''}
+                    </div>
+                  </td>
 
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:#ffffff;border:1px solid #cbd5e1;">
-<thead>
-<tr style="background:#e5edf7;">
-<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Data</th>
-<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Placa</th>
-<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Série</th>
-<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Produto</th>
-<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Procedimento</th>
-<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Status</th>
-<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Unidade</th>
-<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Empresa</th>
-</tr>
-</thead>
-<tbody>
-${rows || `<tr><td colspan="8" align="center" style="padding:14px;font-size:13px;color:#64748b;">Nenhum equipamento detalhado.</td></tr>`}
-</tbody>
-</table>
-</td>
-</tr>
+                  <td width="30%" align="right" valign="middle" style="padding:16px;">
+                    <img src="${omnilinkLogo}" width="150" style="display:block;border:0;max-width:150px;height:auto;margin-left:auto;" />
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-<tr>
-<td align="center" style="background:#f1f5f9;padding:14px 20px;font-size:12px;color:#64748b;">
-Mensagem automática • Portal de Supply Chain
-</td>
-</tr>
+          <tr>
+            <td style="background:#f8fafc;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;text-align:center;background:#f8fafc;">
+                <tr>
+                  <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
+                    <div style="font-size:18px;font-weight:bold;color:#111;">${dayjs(p.startAt || p.startPlannedAt || targetDate).format('DD/MM/YYYY')}</div>
+                    <div style="font-size:12px;color:#64748b;">Início</div>
+                  </td>
+                  <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
+                    <div style="font-size:22px;font-weight:bold;color:#111;">${total}</div>
+                    <div style="font-size:12px;color:#64748b;">Total</div>
+                  </td>
+                  <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
+                    <div style="font-size:22px;font-weight:bold;color:#16a34a;">${done}</div>
+                    <div style="font-size:12px;color:#64748b;">Concluído</div>
+                  </td>
+                  <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
+                    <div style="font-size:22px;font-weight:bold;color:#f97316;">${pending}</div>
+                    <div style="font-size:12px;color:#64748b;">Pendente</div>
+                  </td>
+                  <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
+                    <div style="font-size:18px;font-weight:bold;color:#111;">${dayjs(targetDate).format('DD/MM/YYYY')}</div>
+                    <div style="font-size:12px;color:#64748b;">Atual</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-</table>
-</td>
-</tr>
-</table>
+          <tr>
+            <td style="padding:22px 28px;background:#ffffff;">
+              <p style="font-size:14px;line-height:22px;margin:0;">
+                <strong>${done}</strong> concluídos de <strong>${total}</strong> equipamentos.
+                Percentual de conclusão: <strong>${percent}%</strong>.
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:0 28px 22px 28px;background:#ffffff;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                <tr>
+                  <td width="50%" align="center" style="padding:10px;border:1px solid #d1d5db;">
+                    <img src="cid:chart-pie" width="330" style="display:block;border:0;width:330px;height:auto;" />
+                  </td>
+                  <td width="50%" align="center" style="padding:10px;border:1px solid #d1d5db;">
+                    <img src="cid:chart-bar" width="330" style="display:block;border:0;width:330px;height:auto;" />
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:0 28px 28px 28px;background:#ffffff;">
+              <h3 style="margin:0 0 12px 0;font-size:18px;color:#111;">
+                Equipamentos Instalados
+              </h3>
+
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;background:#ffffff;border:1px solid #cbd5e1;">
+                <thead>
+                  <tr style="background:#e5edf7;">
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Data</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Placa</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Série</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Produto</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Procedimento</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Status</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Unidade</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Empresa</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${
+                    rows ||
+                    `<tr>
+                      <td colspan="8" align="center" style="padding:14px;font-size:13px;color:#64748b;">
+                        Nenhum equipamento detalhado.
+                      </td>
+                    </tr>`
+                  }
+                </tbody>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="background:#f1f5f9;padding:14px 20px;font-size:12px;color:#64748b;">
+              Mensagem automática • Portal de Supply Chain
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
 </body>
 </html>
 `;
@@ -682,6 +728,7 @@ function buildCompleteFinalEmailHtml(project, progressList, targetDate, finalMes
 
   const allVehicles = (progressList || []).flatMap((progress) => {
     const vehicles = Array.isArray(progress.vehicles) ? progress.vehicles : [];
+
     return vehicles.map((v) => ({
       date: progress.date,
       plate: v.plate || '-',
@@ -696,172 +743,26 @@ function buildCompleteFinalEmailHtml(project, progressList, targetDate, finalMes
 
   const rows = allVehicles.map((v) => `
     <tr>
-      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${dayjs(v.date).format('DD/MM/YYYY')}</td>
-      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.plate}</td>
-      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.serial}</td>
-      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.product}</td>
-      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.procedure}</td>
-      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.status}</td>
-      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.unit}</td>
-      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">${v.company}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${dayjs(v.date).format('DD/MM/YYYY')}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.plate}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.serial}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.product}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.procedure}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.status}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.unit}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.company}</td>
     </tr>
   `).join('');
 
   return `
 <!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8" /></head>
-<body style="margin:0;padding:0;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;color:#111;">
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef4fb;">
-<tr>
-<td align="center" style="padding:20px 10px;">
-<table width="800" cellpadding="0" cellspacing="0" border="0" style="width:800px;background:#ffffff;border-collapse:collapse;border:1px solid #d1d5db;">
-
-<tr>
-<td style="background:${headerColor};padding:0;">
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:${headerColor};">
-<tr>
-<td width="30%" align="left" valign="middle" style="padding:16px;">
-${clientLogo ? `<img src="${clientLogo}" width="150" style="display:block;border:0;max-width:150px;height:auto;" />` : `<span style="font-size:20px;font-weight:bold;color:#fff;">${p.client?.name || p.title || ''}</span>`}
-</td>
-<td width="40%" align="center" valign="middle" style="padding:16px;color:#fff;">
-<div style="font-size:23px;font-weight:bold;line-height:28px;color:#fff;">Relatório Final</div>
-<div style="font-size:14px;line-height:20px;color:#fff;margin-top:6px;">${p.title || '-'} ${p.af ? `• AF ${p.af}` : ''}</div>
-</td>
-<td width="30%" align="right" valign="middle" style="padding:16px;">
-<img src="${omnilinkLogo}" width="150" style="display:block;border:0;max-width:150px;height:auto;margin-left:auto;" />
-</td>
-</tr>
-</table>
-</td>
-</tr>
-
-<tr>
-<td style="background:#f8fafc;">
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;text-align:center;background:#f8fafc;">
-<tr>
-<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:18px;font-weight:bold;">${dayjs(p.startAt || p.startPlannedAt || targetDate).format('DD/MM/YYYY')}</div><div style="font-size:12px;color:#64748b;">Início</div></td>
-<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:22px;font-weight:bold;">${total}</div><div style="font-size:12px;color:#64748b;">Total</div></td>
-<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:22px;font-weight:bold;color:#16a34a;">${done}</div><div style="font-size:12px;color:#64748b;">Concluído</div></td>
-<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:22px;font-weight:bold;color:#f97316;">${pending}</div><div style="font-size:12px;color:#64748b;">Pendente</div></td>
-<td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;"><div style="font-size:18px;font-weight:bold;">${dayjs(p.endAt || targetDate).format('DD/MM/YYYY')}</div><div style="font-size:12px;color:#64748b;">Finalização</div></td>
-</tr>
-</table>
-</td>
-</tr>
-
-<tr>
-<td style="padding:22px 28px;background:#ffffff;">
-<h3 style="margin:0 0 12px 0;font-size:18px;color:#111;">Resumo Final</h3>
-<tr>
-  <td style="padding:0 28px 22px 28px;background:#ffffff;">
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
-      <tr>
-        <td width="50%" align="center" style="padding:10px;border:1px solid #d1d5db;">
-          <img src="cid:chart-pie" width="330" style="display:block;border:0;width:330px;height:auto;" />
-        </td>
-        <td width="50%" align="center" style="padding:10px;border:1px solid #d1d5db;">
-          <img src="cid:chart-bar" width="330" style="display:block;border:0;width:330px;height:auto;" />
-        </td>
-      </tr>
-    </table>
-  </td>
-</tr>
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;border:1px solid #d1d5db;">
-<tr>
-<td width="33%" style="padding:10px;font-size:13px;border-right:1px solid #d1d5db;"><strong>Dias com lançamento:</strong><br/>${totalDays}</td>
-<td width="33%" style="padding:10px;font-size:13px;border-right:1px solid #d1d5db;"><strong>Total lançado:</strong><br/>${totalInstalled}</td>
-<td width="34%" style="padding:10px;font-size:13px;"><strong>Percentual final:</strong><br/>${percent}%</td>
-</tr>
-</table>
-${finalMessage ? `<p style="margin:14px 0 0 0;font-size:14px;line-height:22px;"><strong>Mensagem final:</strong><br/>${String(finalMessage).replace(/\n/g, '<br/>')}</p>` : `<p style="margin:14px 0 0 0;font-size:14px;line-height:22px;">Projeto finalizado. Segue abaixo o resumo completo das instalações realizadas.</p>`}
-</td>
-</tr>
-
-<tr>
-<td style="padding:0 28px 28px 28px;background:#ffffff;">
-<p style="font-size:14px;line-height:22px;margin:0 0 14px 0;">
-<strong>${done}</strong> concluídos de <strong>${total}</strong> equipamentos.
-Percentual final de conclusão: <strong>${percent}%</strong>.
-</p>
-
-<h3 style="margin:0 0 12px 0;font-size:18px;color:#111;">Equipamentos Instalados</h3>
-
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:#ffffff;border:1px solid #cbd5e1;">
-<thead>
-<tr style="background:#e5edf7;">
-<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Data</th>
-<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Placa</th>
-<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Série</th>
-<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Produto</th>
-<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Procedimento</th>
-<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Status</th>
-<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Unidade</th>
-<th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;">Empresa</th>
-</tr>
-</thead>
-<tbody>
-${rows || `<tr><td colspan="8" align="center" style="padding:14px;font-size:13px;color:#64748b;">Nenhum equipamento detalhado.</td></tr>`}
-</tbody>
-</table>
-</td>
-</tr>
-
-<tr>
-<td align="center" style="background:#f1f5f9;padding:14px 20px;font-size:12px;color:#64748b;">
-Mensagem automática • Portal de Supply Chain
-</td>
-</tr>
-
-</table>
-</td>
-</tr>
-</table>
-</body>
-</html>
-`;
-}
-function buildStartEmailHtml(project) {
-  const p = project.toJSON ? project.toJSON() : project;
-
-  const total = Number(p.trucksTotal || p.equipmentsTotal || 0);
-  const perDay = Number(p.equipmentsPerDay || 0);
-
-  const headerColor = p.dailyReportHeaderColor || '#2f7dbd';
-
-  const clientLogo = p.dailyReportClientLogoUrl || '';
-  const omnilinkLogo =
-    p.dailyReportOmnilinkLogoUrl ||
-    'https://app.projetos-rc.online/logo_branca.png';
-
-  const startDate = p.startPlannedAt || p.startAt;
-  const endDate = p.endPlannedAt || p.endAt;
-
-  const items = (p.items || [])
-    .map(
-      (item) => `
-        <tr>
-          <td style="padding:10px;border-bottom:1px solid #d1d5db;font-size:13px;color:#111;">
-            ${item.equipmentName || item.name || '-'}
-          </td>
-          <td align="center" style="padding:10px;border-bottom:1px solid #d1d5db;font-size:13px;color:#111;">
-            ${item.qty || item.quantity || 0}
-          </td>
-        </tr>
-      `
-    )
-    .join('');
-
-  return `
-<!DOCTYPE html>
-<html>
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 </head>
 
-<body style="margin:0;padding:0;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef4fb;margin:0;padding:0;">
+<body style="margin:0;padding:0;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;color:#111;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef4fb;">
     <tr>
       <td align="center" style="padding:20px 10px;">
 
@@ -874,14 +775,204 @@ function buildStartEmailHtml(project) {
                   <td width="30%" align="left" valign="middle" style="padding:16px;">
                     ${
                       clientLogo
-                        ? `<img src="${clientLogo}" width="150" style="display:block;border:0;outline:none;text-decoration:none;max-width:150px;height:auto;" />`
+                        ? `<img src="${clientLogo}" width="150" style="display:block;border:0;max-width:150px;height:auto;" />`
+                        : `<span style="font-size:20px;font-weight:bold;color:#ffffff;">${p.client?.name || p.title || ''}</span>`
+                    }
+                  </td>
+
+                  <td width="40%" align="center" valign="middle" style="padding:16px;color:#ffffff;">
+                    <div style="font-size:23px;font-weight:bold;line-height:28px;color:#ffffff;">
+                      Relatório Final
+                    </div>
+                    <div style="font-size:14px;line-height:20px;color:#ffffff;margin-top:6px;">
+                      ${p.title || '-'} ${p.af ? `• AF ${p.af}` : ''}
+                    </div>
+                  </td>
+
+                  <td width="30%" align="right" valign="middle" style="padding:16px;">
+                    <img src="${omnilinkLogo}" width="150" style="display:block;border:0;max-width:150px;height:auto;margin-left:auto;" />
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="background:#f8fafc;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;text-align:center;background:#f8fafc;">
+                <tr>
+                  <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
+                    <div style="font-size:18px;font-weight:bold;color:#111;">${dayjs(p.startAt || p.startPlannedAt || targetDate).format('DD/MM/YYYY')}</div>
+                    <div style="font-size:12px;color:#64748b;">Início</div>
+                  </td>
+                  <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
+                    <div style="font-size:22px;font-weight:bold;color:#111;">${total}</div>
+                    <div style="font-size:12px;color:#64748b;">Total</div>
+                  </td>
+                  <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
+                    <div style="font-size:22px;font-weight:bold;color:#16a34a;">${done}</div>
+                    <div style="font-size:12px;color:#64748b;">Concluído</div>
+                  </td>
+                  <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
+                    <div style="font-size:22px;font-weight:bold;color:#f97316;">${pending}</div>
+                    <div style="font-size:12px;color:#64748b;">Pendente</div>
+                  </td>
+                  <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
+                    <div style="font-size:18px;font-weight:bold;color:#111;">${dayjs(p.endAt || targetDate).format('DD/MM/YYYY')}</div>
+                    <div style="font-size:12px;color:#64748b;">Finalização</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:22px 28px;background:#ffffff;">
+              <h3 style="margin:0 0 12px 0;font-size:18px;color:#111;">
+                Resumo Final
+              </h3>
+
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;border:1px solid #d1d5db;">
+                <tr>
+                  <td width="33%" style="padding:10px;font-size:13px;border-right:1px solid #d1d5db;">
+                    <strong>Dias com lançamento:</strong><br/>${totalDays}
+                  </td>
+                  <td width="33%" style="padding:10px;font-size:13px;border-right:1px solid #d1d5db;">
+                    <strong>Total lançado:</strong><br/>${totalInstalled}
+                  </td>
+                  <td width="34%" style="padding:10px;font-size:13px;">
+                    <strong>Percentual final:</strong><br/>${percent}%
+                  </td>
+                </tr>
+              </table>
+
+              ${
+                finalMessage
+                  ? `<p style="margin:14px 0 0 0;font-size:14px;line-height:22px;"><strong>Mensagem final:</strong><br/>${String(finalMessage).replace(/\n/g, '<br/>')}</p>`
+                  : `<p style="margin:14px 0 0 0;font-size:14px;line-height:22px;">Projeto finalizado. Segue abaixo o resumo completo das instalações realizadas.</p>`
+              }
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:0 28px 22px 28px;background:#ffffff;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                <tr>
+                  <td width="50%" align="center" style="padding:10px;border:1px solid #d1d5db;">
+                    <img src="cid:chart-pie" width="330" style="display:block;border:0;width:330px;height:auto;" />
+                  </td>
+                  <td width="50%" align="center" style="padding:10px;border:1px solid #d1d5db;">
+                    <img src="cid:chart-bar" width="330" style="display:block;border:0;width:330px;height:auto;" />
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:0 28px 28px 28px;background:#ffffff;">
+              <p style="font-size:14px;line-height:22px;margin:0 0 14px 0;">
+                <strong>${done}</strong> concluídos de <strong>${total}</strong> equipamentos.
+                Percentual final de conclusão: <strong>${percent}%</strong>.
+              </p>
+
+              <h3 style="margin:0 0 12px 0;font-size:18px;color:#111;">
+                Equipamentos Instalados
+              </h3>
+
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;background:#ffffff;border:1px solid #cbd5e1;">
+                <thead>
+                  <tr style="background:#e5edf7;">
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Data</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Placa</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Série</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Produto</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Procedimento</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Status</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Unidade</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Empresa</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${
+                    rows ||
+                    `<tr>
+                      <td colspan="8" align="center" style="padding:14px;font-size:13px;color:#64748b;">
+                        Nenhum equipamento detalhado.
+                      </td>
+                    </tr>`
+                  }
+                </tbody>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="background:#f1f5f9;padding:14px 20px;font-size:12px;color:#64748b;">
+              Mensagem automática • Portal de Supply Chain
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`;
+}
+function buildStartEmailHtml(project) {
+  const p = project.toJSON ? project.toJSON() : project;
+
+  const headerColor = p.dailyReportHeaderColor || '#2f7dbd';
+
+  const clientLogo = p.dailyReportClientLogoUrl || '';
+  const omnilinkLogo =
+    p.dailyReportOmnilinkLogoUrl ||
+    'https://app.projetos-rc.online/logo_branca.png';
+
+  const items = (p.items || [])
+    .map((item) => {
+      const qty = item.qty || item.quantity || 0;
+      const name = item.equipmentName || item.name || 'Equipamento';
+      return `
+        <li style="margin:0 0 6px 0;">
+          <strong>${p.af ? `AF ${p.af}` : 'AF'}</strong> – ${qty} equipamento(s) ${name}.
+        </li>
+      `;
+    })
+    .join('');
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+</head>
+
+<body style="margin:0;padding:0;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;color:#111;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef4fb;">
+    <tr>
+      <td align="center" style="padding:20px 10px;">
+
+        <table width="800" cellpadding="0" cellspacing="0" border="0" style="width:800px;background:#ffffff;border-collapse:collapse;border:1px solid #d1d5db;">
+
+          <tr>
+            <td style="background:${headerColor};padding:0;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td width="30%" align="left" valign="middle" style="padding:16px;">
+                    ${
+                      clientLogo
+                        ? `<img src="${clientLogo}" width="150" style="display:block;border:0;max-width:150px;height:auto;" />`
                         : `<span style="font-size:20px;font-weight:bold;color:#ffffff;">${p.client?.name || p.title || ''}</span>`
                     }
                   </td>
 
                   <td width="40%" align="center" valign="middle" style="padding:16px;color:#ffffff;">
                     <div style="font-size:24px;font-weight:bold;line-height:28px;color:#ffffff;">
-                      Início do Projeto
+                      Boas-vindas
                     </div>
                     <div style="font-size:14px;line-height:20px;color:#ffffff;margin-top:6px;">
                       ${p.title || '-'} ${p.af ? `• AF ${p.af}` : ''}
@@ -891,7 +982,7 @@ function buildStartEmailHtml(project) {
                   <td width="30%" align="right" valign="middle" style="padding:16px;">
                     ${
                       omnilinkLogo
-                        ? `<img src="${omnilinkLogo}" width="150" style="display:block;border:0;outline:none;text-decoration:none;max-width:150px;height:auto;margin-left:auto;" />`
+                        ? `<img src="${omnilinkLogo}" width="150" style="display:block;border:0;max-width:150px;height:auto;margin-left:auto;" />`
                         : `<span style="font-size:20px;font-weight:bold;color:#ffffff;">Omnilink</span>`
                     }
                   </td>
@@ -901,100 +992,93 @@ function buildStartEmailHtml(project) {
           </tr>
 
           <tr>
-            <td style="background:#f8fafc;padding:0;">
-              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;text-align:center;background:#f8fafc;">
+            <td style="padding:28px;background:#ffffff;font-size:14px;line-height:22px;color:#111;">
+
+              <p style="margin:0 0 14px 0;">
+                Prezado(a),
+              </p>
+
+              <p style="margin:0 0 14px 0;">
+                É um prazer continuar contando com você na <strong>Omnilink</strong>!
+              </p>
+
+              <p style="margin:0 0 14px 0;">
+                Em continuidade à nossa parceria, seguimos disponíveis para dar andamento às instalações,
+                garantindo todo o suporte necessário ao longo do processo.
+              </p>
+
+              <p style="margin:0 0 14px 0;">
+                A seguir, explicamos os próximos passos para garantir uma experiência tranquila e eficiente:
+              </p>
+
+              <ul style="margin:0 0 18px 22px;padding:0;">
+                ${
+                  items ||
+                  `<li style="margin:0 0 6px 0;">
+                    <strong>${p.af ? `AF ${p.af}` : 'AF'}</strong> – equipamentos previstos para instalação.
+                  </li>`
+                }
+              </ul>
+
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:18px 0;">
                 <tr>
-                  <td width="25%" align="center" style="padding:18px;border-bottom:1px solid #d1d5db;">
-                    <div style="font-size:20px;font-weight:bold;color:#111;">
-                      ${startDate ? dayjs(startDate).format('DD/MM/YYYY') : '-'}
-                    </div>
-                    <div style="font-size:13px;color:#64748b;margin-top:4px;">Início</div>
+                  <td style="padding:14px;border:1px solid #d1d5db;background:#f8fafc;">
+                    <strong>1. Recebimento dos itens para instalação</strong>
+                    <p style="margin:8px 0 0 0;">
+                      Em breve, você receberá os equipamentos necessários para a instalação.
+                      Fique atento ao endereço cadastrado e ao responsável pelo recebimento.
+                    </p>
                   </td>
+                </tr>
 
-                  <td width="25%" align="center" style="padding:18px;border-bottom:1px solid #d1d5db;">
-                    <div style="font-size:22px;font-weight:bold;color:#111;">
-                      ${total}
-                    </div>
-                    <div style="font-size:13px;color:#64748b;margin-top:4px;">Total Equipamentos</div>
+                <tr>
+                  <td style="padding:14px;border-left:1px solid #d1d5db;border-right:1px solid #d1d5db;border-bottom:1px solid #d1d5db;background:#ffffff;">
+                    <strong>2. Reunião de alinhamento de instalação</strong>
+                    <p style="margin:8px 0 0 0;">
+                      Após o recebimento dos itens, pedimos que entre em contato conosco para agendarmos
+                      uma reunião de alinhamento. Nessa etapa, vamos revisar os detalhes técnicos e logísticos
+                      para garantir que tudo ocorra conforme o planejado.
+                    </p>
                   </td>
+                </tr>
 
-                  <td width="25%" align="center" style="padding:18px;border-bottom:1px solid #d1d5db;">
-                    <div style="font-size:22px;font-weight:bold;color:#111;">
-                      ${perDay || '-'}
-                    </div>
-                    <div style="font-size:13px;color:#64748b;margin-top:4px;">Meta diária</div>
-                  </td>
-
-                  <td width="25%" align="center" style="padding:18px;border-bottom:1px solid #d1d5db;">
-                    <div style="font-size:20px;font-weight:bold;color:#111;">
-                      ${endDate ? dayjs(endDate).format('DD/MM/YYYY') : '-'}
-                    </div>
-                    <div style="font-size:13px;color:#64748b;margin-top:4px;">Previsão término</div>
+                <tr>
+                  <td style="padding:14px;border-left:1px solid #d1d5db;border-right:1px solid #d1d5db;border-bottom:1px solid #d1d5db;background:#f8fafc;">
+                    <strong>3. Acompanhamento da instalação</strong>
+                    <p style="margin:8px 0 0 0;">
+                      Nossa equipe acompanhará todo o processo de instalação e você receberá atualizações
+                      por e-mail com o status e os próximos passos.
+                    </p>
                   </td>
                 </tr>
               </table>
-            </td>
-          </tr>
-
-          <tr>
-            <td style="padding:24px 28px;background:#ffffff;color:#111;font-size:14px;line-height:22px;">
-              <p style="margin:0 0 14px 0;">Prezado(a),</p>
 
               <p style="margin:0 0 14px 0;">
-                É com satisfação que informamos o início do projeto
-                <strong>${p.title || '-'}</strong> ${p.af ? `(AF ${p.af})` : ''}.
+                Caso tenha qualquer dúvida ou precise de suporte adicional, nós da equipe de operações
+                estamos à disposição pelos seguintes contatos:
               </p>
 
-              <p style="margin:0 0 14px 0;">
-                Agradecemos a confiança depositada em nossa equipe. Nosso objetivo é garantir
-                uma execução eficiente, segura e com total transparência durante todas as etapas da instalação.
-              </p>
-
-              <p style="margin:0 0 14px 0;">
-                Abaixo você encontra o resumo do escopo do projeto e os equipamentos previstos.
-                Durante a execução, você receberá relatórios diários com o progresso das atividades.
-              </p>
-
-              <p style="margin:0 0 14px 0;">
-                Permanecemos à disposição para quaisquer dúvidas.
-              </p>
-
-              <p style="margin:0;">
-                Atenciosamente,<br/>
-                <strong>Equipe Omnilink</strong>
-              </p>
-            </td>
-          </tr>
-
-          <tr>
-            <td style="padding:0 28px 28px 28px;background:#ffffff;">
-              <h3 style="margin:0 0 12px 0;font-size:18px;color:#111;">
-                Equipamentos previstos para instalação
-              </h3>
-
-              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;border:1px solid #d1d5db;background:#ffffff;">
-                <thead>
-                  <tr style="background:#e5edf7;">
-                    <th align="left" style="padding:10px;font-size:13px;color:#111;border-bottom:1px solid #d1d5db;">
-                      Equipamento
-                    </th>
-                    <th align="center" style="padding:10px;font-size:13px;color:#111;border-bottom:1px solid #d1d5db;width:120px;">
-                      Quantidade
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  ${
-                    items ||
-                    `<tr>
-                      <td colspan="2" align="center" style="padding:14px;font-size:13px;color:#64748b;">
-                        Nenhum item cadastrado
-                      </td>
-                    </tr>`
-                  }
-                </tbody>
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:#eef4fb;border:1px solid #cbd5e1;margin:0 0 18px 0;">
+                <tr>
+                  <td style="padding:14px;font-size:14px;line-height:22px;">
+                    <strong>Fernando Cruz</strong><br/>
+                    E-mail: <a href="mailto:fernando.cruz@omnilink.com.br" style="color:#2f7dbd;text-decoration:none;">fernando.cruz@omnilink.com.br</a><br/>
+                    Tel.: +55 (11) 93408-6292
+                  </td>
+                </tr>
               </table>
+
+              <p style="margin:0 0 14px 0;">
+                Mais uma vez, seja bem-vindo! Estamos ansiosos para entregar uma solução que atenda
+                plenamente às suas expectativas.
+              </p>
+
+              <p style="margin:20px 0 0 0;">
+                Atenciosamente,<br/>
+                <strong>Equipe de Operações</strong><br/>
+                Omnilink
+              </p>
+
             </td>
           </tr>
 
