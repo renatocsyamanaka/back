@@ -914,6 +914,42 @@ router.post('/:id/avatar', auth(), uploadAvatar.single('file'), auditAction({ mo
  */
 router.get('/:id/structure', auth(), auditAction({ module: 'USUARIOS', action: 'ESTRUTURA_VISUALIZADA', description: 'Visualizou estrutura hierárquica do colaborador', entity: 'User' }), ctrl.getStructure);
 
+/**
+ * @swagger
+ * /api/users/{id}/change-password:
+ *   put:
+ *     summary: Atualiza registro
+ *     tags: [Usuários]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Identificador id
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             additionalProperties: true
+ *     responses:
+ *       200:
+ *         description: Operação realizada com sucesso
+ *       400:
+ *         description: Requisição inválida
+ *       401:
+ *         description: Não autenticado
+ *       403:
+ *         description: Sem permissão
+ *       404:
+ *         description: Registro não encontrado
+ *       500:
+ *         description: Erro interno
+ */
 router.put(
   '/:id/change-password',
   auth(),

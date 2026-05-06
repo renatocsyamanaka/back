@@ -20,19 +20,6 @@ const ctrl = require('../controllers/orgController');
  *     responses:
  *       200:
  *         description: Árvore do organograma retornada com sucesso
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               example:
- *                 id: 1
- *                 name: "Diretoria"
- *                 children:
- *                   - id: 2
- *                     name: "Gerência"
- *                     children:
- *                       - id: 3
- *                         name: "Técnicos"
  *       401:
  *         description: Não autenticado
  */

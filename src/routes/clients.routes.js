@@ -12,11 +12,58 @@ const { ok, bad, created } = require('../utils/responses');
  * GET /api/clients/autocomplete
  * Público para tela de solicitação de peças
  */
+/**
+ * @swagger
+ * /api/clients/autocomplete:
+ *   get:
+ *     summary: Consulta registros
+ *     tags: [Clientes]
+ *     responses:
+ *       200:
+ *         description: Operação realizada com sucesso
+ *       400:
+ *         description: Requisição inválida
+ *       404:
+ *         description: Registro não encontrado
+ *       500:
+ *         description: Erro interno
+ */
 router.get('/autocomplete', clientController.searchAutocomplete);
 
 /**
  * POST /api/clients
  * Cadastra cliente com TODOS os campos do Excel
+ */
+/**
+ * @swagger
+ * /api/clients:
+ *   post:
+ *     summary: Cria ou executa ação
+ *     tags: [Clientes]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             additionalProperties: true
+ *     responses:
+ *       200:
+ *         description: Operação realizada com sucesso
+ *       201:
+ *         description: Registro criado com sucesso
+ *       400:
+ *         description: Requisição inválida
+ *       401:
+ *         description: Não autenticado
+ *       403:
+ *         description: Sem permissão
+ *       404:
+ *         description: Registro não encontrado
+ *       500:
+ *         description: Erro interno
  */
 router.post('/', auth(), async (req, res) => {
   try {
@@ -103,6 +150,28 @@ router.post('/', auth(), async (req, res) => {
  * GET /api/clients
  * Lista clientes
  */
+/**
+ * @swagger
+ * /api/clients:
+ *   get:
+ *     summary: Consulta registros
+ *     tags: [Clientes]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Operação realizada com sucesso
+ *       400:
+ *         description: Requisição inválida
+ *       401:
+ *         description: Não autenticado
+ *       403:
+ *         description: Sem permissão
+ *       404:
+ *         description: Registro não encontrado
+ *       500:
+ *         description: Erro interno
+ */
 router.get('/', auth(), async (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
@@ -135,6 +204,35 @@ router.get('/', auth(), async (req, res) => {
  * GET /api/clients/:id
  * Detalhe completo
  */
+/**
+ * @swagger
+ * /api/clients/{id}:
+ *   get:
+ *     summary: Consulta registros
+ *     tags: [Clientes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Identificador id
+ *     responses:
+ *       200:
+ *         description: Operação realizada com sucesso
+ *       400:
+ *         description: Requisição inválida
+ *       401:
+ *         description: Não autenticado
+ *       403:
+ *         description: Sem permissão
+ *       404:
+ *         description: Registro não encontrado
+ *       500:
+ *         description: Erro interno
+ */
 router.get('/:id', auth(), async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -158,6 +256,40 @@ router.get('/:id', auth(), async (req, res) => {
 /**
  * POST /api/clients/import/stream
  * Importação via Excel com SSE
+ */
+/**
+ * @swagger
+ * /api/clients/import/stream:
+ *   post:
+ *     summary: Cria ou executa ação
+ *     tags: [Clientes]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Operação realizada com sucesso
+ *       201:
+ *         description: Registro criado com sucesso
+ *       400:
+ *         description: Requisição inválida
+ *       401:
+ *         description: Não autenticado
+ *       403:
+ *         description: Sem permissão
+ *       404:
+ *         description: Registro não encontrado
+ *       500:
+ *         description: Erro interno
  */
 router.post('/import/stream', auth(), upload.single('file'), async (req, res) => {
   if (!req.file) return bad(res, 'Arquivo não enviado');

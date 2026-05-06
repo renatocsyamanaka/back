@@ -196,7 +196,7 @@ const auditAction = require('../middleware/auditAction');
 
 /**
  * @swagger
- * /part-requests/public:
+ * /api/part-requests/public:
  *   post:
  *     summary: Criar pedido de peças público
  *     tags: [Pedidos de Peças]
@@ -227,7 +227,7 @@ router.post(
 
 /**
  * @swagger
- * /part-requests/public/search:
+ * /api/part-requests/public/search:
  *   get:
  *     summary: Consultar pedido público por número e e-mail
  *     tags: [Pedidos de Peças]
@@ -256,7 +256,7 @@ router.get('/public/search', partRequestController.publicSearch);
 
 /**
  * @swagger
- * /part-requests/nao-visualizados/count:
+ * /api/part-requests/nao-visualizados/count:
  *   get:
  *     summary: Contar pedidos de peças não visualizados
  *     tags: [Pedidos de Peças]
@@ -274,7 +274,7 @@ router.get('/nao-visualizados/count', auth(), partRequestController.countNaoVisu
 
 /**
  * @swagger
- * /part-requests:
+ * /api/part-requests:
  *   post:
  *     summary: Criar pedido de peças interno
  *     tags: [Pedidos de Peças]
@@ -310,24 +310,84 @@ router.post(
 
 /**
  * @swagger
- * /part-requests:
+ * /api/part-requests:
  *   get:
  *     summary: Listar pedidos de peças
  *     tags: [Pedidos de Peças]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           example: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           example: 10
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *           example: PP-2026
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           example: PENDENTE
+ *       - in: query
+ *         name: requestType
+ *         schema:
+ *           type: string
+ *           enum: [ATENDIMENTO, TECNICO, OUTRO]
+ *       - in: query
+ *         name: providerId
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: technicianId
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: managerId
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Lista retornada com sucesso
+ *       401:
+ *         description: Não autorizado
  */
+
 router.get('/', auth(), partRequestController.list);
 
 /**
  * @swagger
- * /part-requests/{id}/visualizar:
+ * /api/part-requests/{id}/visualizar:
  *   put:
  *     summary: Marcar pedido de peças como visualizado
  *     tags: [Pedidos de Peças]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do pedido de peças
+ *         example: 1
+ *     responses:
+ *       200:
+ *         description: Pedido marcado como visualizado
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Pedido não encontrado
  */
+
 router.put(
   '/:id/visualizar',
   auth(),
@@ -342,24 +402,64 @@ router.put(
 
 /**
  * @swagger
- * /part-requests/{id}:
+ * /api/part-requests/{id}:
  *   get:
  *     summary: Buscar pedido de peças por ID
  *     tags: [Pedidos de Peças]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do pedido de peças
+ *         example: 1
+ *     responses:
+ *       200:
+ *         description: Pedido encontrado
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Pedido não encontrado
  */
+
 router.get('/:id', auth(), partRequestController.show);
 
 /**
  * @swagger
- * /part-requests/{id}:
+ * /api/part-requests/{id}:
  *   patch:
  *     summary: Atualizar pedido de peças
  *     tags: [Pedidos de Peças]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do pedido de peças
+ *         example: 1
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/PartRequestUpdateInput'
+ *     responses:
+ *       200:
+ *         description: Pedido atualizado com sucesso
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Pedido não encontrado
  */
+
 router.patch(
   '/:id',
   auth(),
@@ -375,13 +475,37 @@ router.patch(
 
 /**
  * @swagger
- * /part-requests/{id}/batch-approve:
+ * /api/part-requests/{id}/batch-approve:
  *   post:
  *     summary: Aprovar itens do pedido em lote
  *     tags: [Pedidos de Peças]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do pedido de peças
+ *         example: 1
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/BatchApproveInput'
+ *     responses:
+ *       200:
+ *         description: Itens aprovados com sucesso
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Pedido não encontrado
  */
+
 router.post(
   '/:id/batch-approve',
   auth(),
@@ -397,13 +521,48 @@ router.post(
 
 /**
  * @swagger
- * /part-requests/items/{itemId}/approve:
+ * /api/part-requests/items/{itemId}/approve:
  *   post:
  *     summary: Aprovar item individual do pedido
  *     tags: [Pedidos de Peças]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: itemId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do item do pedido
+ *         example: 10
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               approvedQty:
+ *                 type: integer
+ *                 example: 1
+ *               managerNote:
+ *                 type: string
+ *                 example: Aprovado pelo gestor
+ *               reasonCode:
+ *                 type: string
+ *                 example: OK
+ *               reasonDetails:
+ *                 type: string
+ *                 example: Material disponível
+ *     responses:
+ *       200:
+ *         description: Item aprovado com sucesso
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Item não encontrado
  */
+
 router.post(
   '/items/:itemId/approve',
   auth(),
@@ -419,13 +578,45 @@ router.post(
 
 /**
  * @swagger
- * /part-requests/items/{itemId}/reject:
+ * /api/part-requests/items/{itemId}/reject:
  *   post:
  *     summary: Rejeitar item individual do pedido
  *     tags: [Pedidos de Peças]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: itemId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do item do pedido
+ *         example: 10
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               managerNote:
+ *                 type: string
+ *                 example: Rejeitado pelo gestor
+ *               reasonCode:
+ *                 type: string
+ *                 example: FALTA_ESTOQUE
+ *               reasonDetails:
+ *                 type: string
+ *                 example: Material indisponível no momento
+ *     responses:
+ *       200:
+ *         description: Item rejeitado com sucesso
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Item não encontrado
  */
+
 router.post(
   '/items/:itemId/reject',
   auth(),
@@ -441,13 +632,29 @@ router.post(
 
 /**
  * @swagger
- * /part-requests/{id}:
+ * /api/part-requests/{id}:
  *   delete:
  *     summary: Excluir pedido de peças
  *     tags: [Pedidos de Peças]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do pedido de peças
+ *         example: 1
+ *     responses:
+ *       200:
+ *         description: Pedido excluído com sucesso
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Pedido não encontrado
  */
+
 router.delete(
   '/:id',
   auth(),

@@ -376,7 +376,37 @@ router.delete(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do projeto
+ *         example: 1
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [recordType]
+ *             properties:
+ *               recordType:
+ *                 type: string
+ *                 enum: [PROJECT, BASE, OUTROS]
+ *                 example: PROJECT
+ *     responses:
+ *       200:
+ *         description: Tipo de registro alterado com sucesso
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Projeto não encontrado
  */
+
 router.patch(
   '/:id/record-type',
   auth(),
@@ -398,7 +428,44 @@ router.patch(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID da base/projeto
+ *         example: 1
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *                 example: Projeto convertido Cliente XPTO
+ *               contactEmails:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["cliente@empresa.com.br"]
+ *               trucksTotal:
+ *                 type: integer
+ *                 example: 100
+ *               equipmentsPerDay:
+ *                 type: integer
+ *                 example: 10
+ *     responses:
+ *       200:
+ *         description: Base convertida com sucesso
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Registro não encontrado
  */
+
 router.patch(
   '/:id/convert-to-project',
   auth(),
@@ -420,7 +487,36 @@ router.patch(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do projeto
+ *         example: 1
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               whatsappGroupName:
+ *                 type: string
+ *                 example: Grupo Cliente XPTO
+ *               whatsappGroupLink:
+ *                 type: string
+ *                 example: https://chat.whatsapp.com/exemplo
+ *     responses:
+ *       200:
+ *         description: Dados de WhatsApp atualizados com sucesso
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Projeto não encontrado
  */
+
 router.patch(
   '/:id/whatsapp',
   auth(),
@@ -442,7 +538,23 @@ router.patch(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do projeto
+ *         example: 1
+ *     responses:
+ *       200:
+ *         description: Projeto iniciado com sucesso
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Projeto não encontrado
  */
+
 router.post(
   '/:id/start',
   auth(),
@@ -464,7 +576,23 @@ router.post(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do projeto
+ *         example: 1
+ *     responses:
+ *       200:
+ *         description: Projeto finalizado com sucesso
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Projeto não encontrado
  */
+
 router.post(
   '/:id/finish',
   auth(),
@@ -486,6 +614,14 @@ router.post(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do projeto
+ *         example: 1
  *     requestBody:
  *       required: true
  *       content:
@@ -497,7 +633,18 @@ router.post(
  *               file:
  *                 type: string
  *                 format: binary
+ *                 description: Logo PNG ou JPG
+ *     responses:
+ *       200:
+ *         description: Logo enviada com sucesso
+ *       400:
+ *         description: Arquivo inválido
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Projeto não encontrado
  */
+
 router.post(
   '/:id/upload-daily-report-logo',
   auth(),
@@ -520,7 +667,23 @@ router.post(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do projeto
+ *         example: 1
+ *     responses:
+ *       200:
+ *         description: Logo excluída com sucesso
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Projeto não encontrado
  */
+
 router.delete(
   '/:id/delete-daily-report-logo',
   auth(),
@@ -542,7 +705,39 @@ router.delete(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do projeto
+ *         example: 1
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, quantity]
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: OMNITURBO
+ *               quantity:
+ *                 type: integer
+ *                 example: 50
+ *     responses:
+ *       201:
+ *         description: Item criado com sucesso
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Projeto não encontrado
  */
+
 router.post(
   '/:id/items',
   auth(),
@@ -564,7 +759,45 @@ router.post(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do projeto
+ *         example: 1
+ *       - in: path
+ *         name: itemId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do item
+ *         example: 10
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: OMNITURBO
+ *               quantity:
+ *                 type: integer
+ *                 example: 60
+ *     responses:
+ *       200:
+ *         description: Item atualizado com sucesso
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Item ou projeto não encontrado
  */
+
 router.put(
   '/:id/items/:itemId',
   auth(),
@@ -586,7 +819,30 @@ router.put(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do projeto
+ *         example: 1
+ *       - in: path
+ *         name: itemId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do item
+ *         example: 10
+ *     responses:
+ *       200:
+ *         description: Item excluído com sucesso
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Item ou projeto não encontrado
  */
+
 router.delete(
   '/:id/items/:itemId',
   auth(),
@@ -608,7 +864,53 @@ router.delete(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do projeto
+ *         example: 1
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               date:
+ *                 type: string
+ *                 format: date
+ *                 example: 2026-05-04
+ *               trucksDoneToday:
+ *                 type: integer
+ *                 example: 5
+ *               notes:
+ *                 type: string
+ *                 example: Progresso lançado pelo Swagger
+ *               vehicles:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     plate:
+ *                       type: string
+ *                       example: ABC1D23
+ *                     serial:
+ *                       type: string
+ *                       example: SN123456
+ *     responses:
+ *       201:
+ *         description: Progresso lançado com sucesso
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Projeto não encontrado
  */
+
 router.post(
   '/:id/progress',
   auth(),
@@ -630,7 +932,49 @@ router.post(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do projeto
+ *         example: 1
+ *       - in: path
+ *         name: progressId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do progresso
+ *         example: 20
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               date:
+ *                 type: string
+ *                 format: date
+ *                 example: 2026-05-04
+ *               trucksDoneToday:
+ *                 type: integer
+ *                 example: 8
+ *               notes:
+ *                 type: string
+ *                 example: Progresso atualizado
+ *     responses:
+ *       200:
+ *         description: Progresso atualizado com sucesso
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Progresso ou projeto não encontrado
  */
+
 router.put(
   '/:id/progress/:progressId',
   auth(),
@@ -652,7 +996,30 @@ router.put(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do projeto
+ *         example: 1
+ *       - in: path
+ *         name: progressId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do progresso
+ *         example: 20
+ *     responses:
+ *       200:
+ *         description: Progresso excluído com sucesso
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Progresso ou projeto não encontrado
  */
+
 router.delete(
   '/:id/progress/:progressId',
   auth(),
@@ -674,7 +1041,55 @@ router.delete(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do projeto
+ *         example: 1
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               dailyReportEnabled:
+ *                 type: boolean
+ *                 example: true
+ *               dailyReportSendToClient:
+ *                 type: boolean
+ *                 example: false
+ *               dailyReportType:
+ *                 type: string
+ *                 example: complete
+ *               dailyReportHeaderColor:
+ *                 type: string
+ *                 example: "#005BAA"
+ *               dailyReportColorDone:
+ *                 type: string
+ *                 example: "#52c41a"
+ *               dailyReportColorPending:
+ *                 type: string
+ *                 example: "#faad14"
+ *               contactEmails:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["cliente@empresa.com.br"]
+ *     responses:
+ *       200:
+ *         description: Configurações atualizadas com sucesso
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Projeto não encontrado
  */
+
 router.patch(
   '/:id/daily-report/settings',
   auth(),
@@ -696,7 +1111,47 @@ router.patch(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do projeto
+ *         example: 1
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               date:
+ *                 type: string
+ *                 format: date
+ *                 example: 2026-05-04
+ *               sendAll:
+ *                 type: boolean
+ *                 example: false
+ *               emailTo:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["renato.yamanaka@omnilink.com.br"]
+ *               reportType:
+ *                 type: string
+ *                 example: complete
+ *     responses:
+ *       200:
+ *         description: Relatório enviado com sucesso
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Projeto não encontrado
  */
+
 router.post(
   '/:id/daily-report/send-now',
   auth(),
@@ -718,7 +1173,34 @@ router.post(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do projeto
+ *         example: 1
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               emailTo:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["cliente@empresa.com.br"]
+ *               sendAll:
+ *                 type: boolean
+ *                 example: false
+ *     responses:
+ *       200:
+ *         description: E-mail inicial enviado com sucesso
  */
+
 router.post(
   '/:id/emails/start',
   auth(),
@@ -740,7 +1222,41 @@ router.post(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do projeto
+ *         example: 1
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               date:
+ *                 type: string
+ *                 format: date
+ *                 example: 2026-05-04
+ *               emailTo:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["cliente@empresa.com.br"]
+ *               sendAll:
+ *                 type: boolean
+ *                 example: false
+ *               reportType:
+ *                 type: string
+ *                 example: complete
+ *     responses:
+ *       200:
+ *         description: E-mail diário enviado com sucesso
  */
+
 router.post(
   '/:id/emails/daily',
   auth(),
@@ -762,7 +1278,34 @@ router.post(
  *     tags: [InstallationProjects]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do projeto
+ *         example: 1
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               emailTo:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["cliente@empresa.com.br"]
+ *               sendAll:
+ *                 type: boolean
+ *                 example: false
+ *     responses:
+ *       200:
+ *         description: E-mail final enviado com sucesso
  */
+
 router.post(
   '/:id/emails/final',
   auth(),
