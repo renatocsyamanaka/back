@@ -676,4 +676,62 @@ router.put(
   controller.updatePublicInventory
 );
 
+/**
+ * @swagger
+ * /auto-inventory/providers/{providerId}/remove-from-cycle:
+ *   delete:
+ *     summary: Remover prestador do ciclo mensal de auto inventário
+ *     tags: [Auto Inventário]
+ *     security:
+ *       - bearerAuth: []
+ *     description: Remove o prestador apenas do ciclo/mês informado. O prestador continuará habilitado para próximos ciclos.
+ *     parameters:
+ *       - in: path
+ *         name: providerId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 207
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - month
+ *               - year
+ *             properties:
+ *               month:
+ *                 type: integer
+ *                 example: 5
+ *               year:
+ *                 type: integer
+ *                 example: 2026
+ *     responses:
+ *       200:
+ *         description: Prestador removido do ciclo com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Prestador removido do inventário deste mês.
+ *       400:
+ *         description: Mês e ano obrigatórios
+ *       401:
+ *         description: Não autenticado
+ *       403:
+ *         description: Sem permissão
+ *       404:
+ *         description: Ciclo ou prestador não encontrado
+ */
+router.delete(
+  '/providers/:providerId/remove-from-cycle',
+  auth(),
+  requirePermission('AUTO_INVENTORY_ADMIN'),
+  controller.removeProviderFromCycle
+);
 module.exports = router;

@@ -2,6 +2,8 @@ const crypto = require('crypto');
 const { Op } = require('sequelize');
 const XLSX = require('xlsx');
 
+const sequelize = require('../db');
+
 const {
   AutoInventoryCycle,
   AutoInventoryItem,
@@ -44,21 +46,29 @@ async function getOrCreateConfig() {
   return config;
 }
 
-const detectResponseStatus = async (responseId) => {
+const detectResponseStatus = async (responseId, finalizar = false) => {
   const responseItems = await AutoInventoryResponseItem.findAll({
     where: { responseId },
   });
 
   const total = responseItems.length;
+
   const preenchidos = responseItems.filter(
-    (item) => item.quantidade !== null && item.quantidade !== undefined
+    (item) =>
+      item.quantidade !== null &&
+      item.quantidade !== undefined
   ).length;
 
-  if (preenchidos === 0) return 'PENDENTE';
-  if (preenchidos < total) return 'PARCIAL';
-  return 'COMPLETO';
-};
+  if (preenchidos === 0) {
+    return 'PENDENTE';
+  }
 
+  if (preenchidos < total) {
+    return 'PARCIAL';
+  }
+
+  return finalizar ? 'COMPLETO' : 'PARCIAL';
+};
 // ================= CONFIGURAÇÃO =================
 
 exports.getConfig = async (_req, res) => {
@@ -669,14 +679,19 @@ exports.updatePublicInventory = async (req, res) => {
       }
     }
 
-    const status = await detectResponseStatus(response.id);
+    const status = await detectResponseStatus(
+      response.id,
+      finalizar
+    );
 
     response.status = status;
     response.lastUpdateAt = new Date();
 
-    if (finalizar && status === 'COMPLETO') {
-      response.submittedAt = new Date();
-    }
+      if (finalizar && status === 'COMPLETO') {
+        response.submittedAt = new Date();
+      } else {
+        response.submittedAt = null;
+      }
 
     await response.save();
 
@@ -942,6 +957,95 @@ exports.exportMonthlyInventory = async (req, res) => {
     console.error('Erro ao exportar inventário:', error);
     return res.status(500).json({
       error: 'Erro ao exportar inventário.',
+    });
+  }
+};
+
+// ================= REMOVER =================
+
+exports.removeProviderFromCycle = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
+  try {
+    const { providerId } = req.params;
+    const { month, year } = req.body;
+
+    if (!month || !year) {
+      await transaction.rollback();
+
+      return res.status(400).json({
+        error: 'Mês e ano são obrigatórios.',
+      });
+    }
+
+    const cycle = await AutoInventoryCycle.findOne({
+      where: {
+        month: Number(month),
+        year: Number(year),
+      },
+      transaction,
+    });
+
+    if (!cycle) {
+      await transaction.rollback();
+
+      return res.status(404).json({
+        error: 'Ciclo não encontrado.',
+      });
+    }
+
+    const response = await AutoInventoryResponse.findOne({
+      where: {
+        cycleId: cycle.id,
+        providerId: Number(providerId),
+      },
+      transaction,
+    });
+
+    if (!response) {
+      await transaction.rollback();
+
+      return res.status(404).json({
+        error: 'Prestador não encontrado neste ciclo.',
+      });
+    }
+
+    await AutoInventoryResponseItem.destroy({
+      where: {
+        responseId: response.id,
+      },
+      transaction,
+    });
+
+    await response.destroy({ transaction });
+
+    await User.update(
+      {
+        autoInventoryEnabled: false,
+      },
+      {
+        where: {
+          id: Number(providerId),
+        },
+        transaction,
+        validate: false,
+        hooks: false,
+      }
+    );
+
+    await transaction.commit();
+
+    return res.json({
+      message:
+        'Prestador removido do inventário deste mês e desabilitado para próximos ciclos.',
+    });
+  } catch (error) {
+    await transaction.rollback();
+
+    console.error('Erro ao remover prestador do ciclo:', error);
+
+    return res.status(500).json({
+      error: 'Erro ao remover prestador do inventário.',
     });
   }
 };
