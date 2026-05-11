@@ -37,6 +37,8 @@ const VALID_PERMISSIONS = [
   'DELIVERY_REPORTS_ADMIN',
   'DASHBOARD_ACTIVITY_VIEW',
   'DASHBOARD_ACTIVITY_ADMIN',
+  'AUTO_INVENTORY_VIEW',
+  'AUTO_INVENTORY_ADMIN',
 ];
 
 const DEFAULT_PERMISSIONS = [
@@ -71,6 +73,7 @@ function serializeUser(userInstance) {
     sectors: payload.sectors,
     permissions: payload.permissions,
     estoqueAvancado: !!payload.estoqueAvancado,
+    autoInventoryEnabled: !!payload.autoInventoryEnabled,
     vendorCode: payload.vendorCode ?? null,
     serviceAreaCode: payload.serviceAreaCode ?? null,
     serviceAreaName: payload.serviceAreaName ?? null,
@@ -230,6 +233,7 @@ const workerSchema = Joi.object({
   ).optional(),
 
   estoqueAvancado: Joi.boolean().default(false),
+  autoInventoryEnabled: Joi.boolean().default(false),
 
   vendorCode: Joi.string().allow('', null),
   serviceAreaCode: Joi.string().allow('', null),
@@ -315,6 +319,7 @@ const updateSchema = Joi.object({
 
   estoqueAvancado: Joi.boolean(),
 
+  autoInventoryEnabled: Joi.boolean(),
   phone: Joi.string().allow('', null),
   vendorCode: Joi.string().allow('', null),
   serviceAreaCode: Joi.string().allow('', null),
@@ -323,6 +328,7 @@ const updateSchema = Joi.object({
 
   cargoDescritivo: Joi.string().max(150).allow('', null),
   ocultarCargo: Joi.boolean(),
+  autoInventoryEnabled: Joi.boolean().default(false),
 
   addressStreet: Joi.string().allow('', null),
   addressNumber: Joi.string().allow('', null),
@@ -465,6 +471,7 @@ async function create(req, res) {
       permissions: body.permissions,
       cargoDescritivo: value.cargoDescritivo?.trim() || null,
       ocultarCargo: !!value.ocultarCargo,
+      autoInventoryEnabled: value.autoInventoryEnabled ?? false,
       password_hash: value.password,
       loginEnabled: true,
     });
@@ -528,6 +535,7 @@ async function createWorker(req, res) {
       phone: value.phone || null,
       sectors: body.sectors,
       permissions: body.permissions,
+      autoInventoryEnabled: value.autoInventoryEnabled ?? false,
       estoqueAvancado: value.estoqueAvancado ?? false,
       vendorCode: value.vendorCode || null,
       serviceAreaCode: value.serviceAreaCode || null,
@@ -895,7 +903,7 @@ async function listProviders(req, res) {
     const q = String(req.query.q || '').trim();
 
     const rows = await User.findAll({
-      attributes: ['id', 'name', 'email', 'sectors', 'permissions'],
+      attributes: ['id', 'name', 'email', 'sectors', 'permissions', 'autoInventoryEnabled'],
       include: [
         {
           model: Role,
@@ -925,6 +933,7 @@ async function listProviders(req, res) {
         id: u.id,
         name: u.name,
         email: u.email,
+        autoInventoryEnabled: !!u.autoInventoryEnabled,
         sectors: Array.isArray(u.sectors) && u.sectors.length > 0 ? u.sectors : ['OPERACOES'],
         permissions: Array.isArray(u.permissions) && u.permissions.length > 0 ? u.permissions : DEFAULT_PERMISSIONS,
       }))
@@ -1042,6 +1051,7 @@ async function listTechnicians(req, res) {
         'managerId',
         'isActive',
         'estoqueAvancado',
+        'autoInventoryEnabled',
         'vendorCode',
         'serviceAreaCode',
         'serviceAreaName',
@@ -1077,6 +1087,7 @@ async function listTechnicians(req, res) {
         managerId: u.managerId ?? null,
         isActive: u.isActive !== false,
         estoqueAvancado: !!u.estoqueAvancado,
+        autoInventoryEnabled: !!u.autoInventoryEnabled,
         vendorCode: u.vendorCode ?? null,
         serviceAreaCode: u.serviceAreaCode ?? null,
         serviceAreaName: u.serviceAreaName ?? null,
@@ -1188,6 +1199,7 @@ async function mapTechs(req, res) {
         'lat',
         'lng',
         'estoqueAvancado',
+        'autoInventoryEnabled',
         'vendorCode',
         'serviceAreaCode',
         'serviceAreaName',
@@ -1258,6 +1270,7 @@ async function mapTechs(req, res) {
         lat: u.lat,
         lng: u.lng,
         estoqueAvancado: !!u.estoqueAvancado,
+        autoInventoryEnabled: !!u.autoInventoryEnabled,
         vendorCode: u.vendorCode ?? null,
         serviceAreaCode: u.serviceAreaCode ?? null,
         serviceAreaName: u.serviceAreaName ?? null,

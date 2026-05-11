@@ -31,6 +31,8 @@ const ALLOWED_PERMISSIONS = [
   'PRESTADORES_APROVADOS_VIEW',
   'DASHBOARD_ACTIVITY_VIEW',
   'DELIVERY_REPORTS_VIEW',
+  'AUTO_INVENTORY_VIEW',
+  'AUTO_INVENTORY_ADMIN',
 ];
 
 const DEFAULT_SECTORS = ['OPERACOES'];
@@ -113,7 +115,10 @@ User.init(
       type: DataTypes.INTEGER,
       allowNull: true,
     },
-
+    autoInventoryEnabled: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
     roleId: {
       type: DataTypes.INTEGER,
       allowNull: true,
@@ -183,7 +188,10 @@ User.init(
       allowNull: false,
       defaultValue: false,
     },
-
+    autoInventoryEnabled: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
     phone: {
       type: DataTypes.STRING,
       allowNull: true,

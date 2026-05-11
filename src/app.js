@@ -5,7 +5,11 @@ const swaggerSpec = require('./config/swagger');
 const cors = require('cors');
 const { sequelize, Role } = require('./models');
 const path = require('path');
+const cron = require('node-cron');
 
+const {
+  runAutoInventoryJob,
+} = require('./jobs/autoInventoryJob');
 const app = express();
 
 app.use((req, _res, next) => {
@@ -252,6 +256,17 @@ app.get('/', (_req, res) => {
   res.json({ ok: true });
 });
 
+// ================= AUTO INVENTÁRIO =================
+cron.schedule(
+  '0 8 * * *',
+  async () => {
+    console.log('[AUTO INVENTORY] Executando job...');
+    await runAutoInventoryJob();
+  },
+  {
+    timezone: 'America/Sao_Paulo',
+  }
+);
 module.exports = {
   app,
 

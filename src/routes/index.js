@@ -60,5 +60,6 @@ mount('/need-homologation', './need-homologation.routes');
 mount('/need-ata', './need-ata.routes');
 mount('/activity-logs', './activity-logs.routes');
 mount('/whatsapp', './whatsapp.routes');
+mount('/auto-inventory', './autoInventory.routes');
 
 module.exports = router;

@@ -46,8 +46,12 @@ const WhatsappMessage = require('./WhatsappMessage');
 const WhatsappFlow = require('./WhatsappFlow');
 const WhatsappFlowStep = require('./WhatsappFlowStep');
 const ActivityLog = require('./ActivityLog');
-
-
+//Auto inventario
+const AutoInventoryCycle = require('./AutoInventoryCycle');
+const AutoInventoryItem = require('./AutoInventoryItem');
+const AutoInventoryResponse = require('./AutoInventoryResponse');
+const AutoInventoryResponseItem = require('./AutoInventoryResponseItem');
+const AutoInventoryConfig = require('./AutoInventoryConfig');
 
 // ----------------- Whatsapp  -----------------
 WhatsappConversation.hasMany(WhatsappMessage, {  as: 'messages',  foreignKey: 'conversationId',  onDelete: 'CASCADE',});
@@ -62,7 +66,50 @@ WhatsappConversation.belongsTo(User, {  as: 'createdBy',  foreignKey: 'createdBy
 User.hasMany(WhatsappConversation, {  as: 'whatsappConversationsUpdated',  foreignKey: 'updatedById',});
 WhatsappConversation.belongsTo(User, {  as: 'updatedBy',  foreignKey: 'updatedById',});
 
+// ----------------- Auto Inventário de Peças -----------------
+AutoInventoryCycle.hasMany(AutoInventoryResponse, {
+  as: 'responses',
+  foreignKey: 'cycleId',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE',
+});
 
+AutoInventoryResponse.belongsTo(AutoInventoryCycle, {
+  as: 'cycle',
+  foreignKey: 'cycleId',
+});
+
+User.hasMany(AutoInventoryResponse, {
+  as: 'autoInventoryResponses',
+  foreignKey: 'providerId',
+});
+
+AutoInventoryResponse.belongsTo(User, {
+  as: 'provider',
+  foreignKey: 'providerId',
+});
+
+AutoInventoryResponse.hasMany(AutoInventoryResponseItem, {
+  as: 'items',
+  foreignKey: 'responseId',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE',
+});
+
+AutoInventoryResponseItem.belongsTo(AutoInventoryResponse, {
+  as: 'response',
+  foreignKey: 'responseId',
+});
+
+AutoInventoryItem.hasMany(AutoInventoryResponseItem, {
+  as: 'responses',
+  foreignKey: 'itemId',
+});
+
+AutoInventoryResponseItem.belongsTo(AutoInventoryItem, {
+  as: 'item',
+  foreignKey: 'itemId',
+});
 
 // ----------------- LOGS Usuarios -----------------
 
@@ -668,5 +715,10 @@ module.exports = {
   AtaDocument,
   DashboardBanner,
   SystemUpdate,
-  ActivityLog
+  ActivityLog,
+  AutoInventoryCycle,
+  AutoInventoryItem,
+  AutoInventoryResponse,
+  AutoInventoryResponseItem,
+  AutoInventoryConfig,
 };
