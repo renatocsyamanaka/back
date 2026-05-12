@@ -123,7 +123,7 @@ const DEFAULT_REQUIRED_DOCUMENTS = [
 ];
 
 function buildPublicLink(token) {
-  const base = process.env.TECHNICIAN_PUBLIC_BASE_URL || 'http://localhost:5173';
+  const base = process.env.API_URL || 'http://localhost:5173';
   return `${base.replace(/\/+$/, '')}/cadastro-tecnico/${token}`;
 }
 function sendInviteUnavailable(res, invite) {
