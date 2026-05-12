@@ -20,20 +20,21 @@ function getInventoryLink(response) {
 }
 
 function getLogoUrl() {
-  return `${API_URL}/public/logo.png`;
+  return process.env.EMAIL_LOGO_URL || 'https://app.projetos-rc.online/logo_branca.png';
 }
 
-async function sendMail({ to, subject, html }) {
+async function sendMail({ to, cc, subject, html }) {
   if (!to) return;
 
   const transporter = getTransporter();
 
-  return transporter.sendMail({
-    from: `"${process.env.EMAIL_FROM_NAME || 'Operações Omnilink'}" <${process.env.EMAIL_USUARIO}>`,
-    to,
-    subject,
-    html,
-  });
+    return transporter.sendMail({
+      from: `"${process.env.EMAIL_FROM_NAME || 'Logistica Omnilink'}" <${process.env.EMAIL_USUARIO}>`,
+      to,
+      cc,
+      subject,
+      html,
+    });
 }
 
 function baseTemplate({ title, subtitle, providerName, content, buttonText, link }) {
@@ -47,14 +48,36 @@ function baseTemplate({ title, subtitle, providerName, content, buttonText, link
             <table width="680" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.08);">
 
               <tr>
-                <td style="background:linear-gradient(135deg,#006DAA 0%,#00A3E0 100%);padding:26px 32px;">
-                  <table width="100%">
-                    <tr>
-                      <td>
-                        <img src="${logoUrl}" alt="Omnilink" style="height:48px;display:block;" />
-                      </td>
-                    </tr>
-                  </table>
+                <td
+                  style="
+                    background:linear-gradient(135deg,#006DAA 0%,#00A3E0 100%);
+                    padding:34px 32px 28px 32px;
+                    text-align:center;
+                  "
+                >
+                  <img
+                    src="${logoUrl}"
+                    alt="Omnilink"
+                    style="
+                      width:260px;
+                      max-width:90%;
+                      height:auto;
+                      display:block;
+                      margin:0 auto;
+                    "
+                  />
+
+                  <div
+                    style="
+                      margin-top:18px;
+                      width:72px;
+                      height:4px;
+                      background:rgba(255,255,255,0.35);
+                      border-radius:999px;
+                      margin-left:auto;
+                      margin-right:auto;
+                    "
+                  ></div>
                 </td>
               </tr>
 
@@ -113,13 +136,14 @@ function baseTemplate({ title, subtitle, providerName, content, buttonText, link
   `;
 }
 
-async function sendInventoryRequest(response) {
+async function sendInventoryRequest(response, options = {}) {
   const provider = response.provider;
   const link = getInventoryLink(response);
 
   return sendMail({
     to: provider.email,
     subject: 'Solicitação de Auto Inventário de Peças',
+    cc: options.cc || '',
     html: baseTemplate({
       title: 'Auto Inventário de Peças',
       subtitle: 'Está disponível o preenchimento mensal do seu inventário de peças.',
@@ -139,7 +163,7 @@ async function sendInventoryRequest(response) {
   });
 }
 
-async function sendReminder(response) {
+async function sendReminder(response, options = {}) {
   const provider = response.provider;
   const link = getInventoryLink(response);
 
@@ -151,6 +175,7 @@ async function sendReminder(response) {
   return sendMail({
     to: provider.email,
     subject,
+    cc: options.cc || '',
     html: baseTemplate({
       title: 'Lembrete de Auto Inventário',
       subtitle: 'Identificamos que seu inventário ainda não foi finalizado.',

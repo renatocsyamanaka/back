@@ -357,7 +357,10 @@ User.hasMany(DashboardActivity, {
   as: 'dashboardActivitiesDeleted',
   foreignKey: 'deletedById',
 });
-
+AutoInventoryResponse.belongsTo(User, {
+  foreignKey: 'validatedById',
+  as: 'validatedBy',
+});
 // ----------------- Part Requests -----------------
 PartRequest.hasMany(PartRequestItem, {
   as: 'items',

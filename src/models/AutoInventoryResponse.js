@@ -27,6 +27,15 @@ const AutoInventoryResponse = sequelize.define('AutoInventoryResponse', {
     type: DataTypes.DATE,
     allowNull: true,
   },
+  validatedAt: {
+  type: DataTypes.DATE,
+  allowNull: true,
+  },
+
+  validatedById: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
   completedMailSentAt: {
     type: DataTypes.DATE,
     allowNull: true,

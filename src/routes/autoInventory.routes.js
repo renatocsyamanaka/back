@@ -734,4 +734,20 @@ router.delete(
   requirePermission('AUTO_INVENTORY_ADMIN'),
   controller.removeProviderFromCycle
 );
+/**
+ * @swagger
+ * /auto-inventory/responses/{responseId}/validate:
+ *   patch:
+ *     summary: Validar internamente um inventário preenchido
+ *     tags: [Auto Inventário]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.patch(
+  '/responses/:responseId/validate',
+  auth(),
+  requirePermission('AUTO_INVENTORY_ADMIN'),
+  controller.validateProviderInventory
+);
+
 module.exports = router;

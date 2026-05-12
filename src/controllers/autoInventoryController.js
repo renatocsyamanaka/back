@@ -448,6 +448,11 @@ exports.getDashboard = async (req, res) => {
               attributes: ['id', 'name', 'email', 'isActive'],
             },
             {
+              model: User,
+              as: 'validatedBy',
+              attributes: ['id', 'name', 'email'],
+            },
+            {
               model: AutoInventoryResponseItem,
               as: 'items',
               include: [
@@ -490,6 +495,8 @@ exports.getDashboard = async (req, res) => {
         lastUpdateAt: response.lastUpdateAt,
         reminderSentAt: response.reminderSentAt,
         completedMailSentAt: response.completedMailSentAt,
+        validatedAt: response.validatedAt,
+        validatedBy: response.validatedBy,
         totalItens,
         preenchidos,
         faltantes: totalItens - preenchidos,
@@ -579,7 +586,40 @@ exports.getProviderInventory = async (req, res) => {
     });
   }
 };
+exports.validateProviderInventory = async (req, res) => {
+  try {
+    const { responseId } = req.params;
+    const userId = req.user?.id;
 
+    const response = await AutoInventoryResponse.findByPk(responseId);
+
+    if (!response) {
+      return res.status(404).json({
+        error: 'Inventário não encontrado.',
+      });
+    }
+
+    if (!['PARCIAL', 'COMPLETO'].includes(response.status)) {
+      return res.status(400).json({
+        error: 'Só é possível validar inventários parciais ou completos.',
+      });
+    }
+
+    response.validatedAt = new Date();
+    response.validatedById = userId;
+
+    await response.save();
+
+    return res.json({
+      message: 'Inventário validado com sucesso.',
+    });
+  } catch (error) {
+    console.error('Erro ao validar inventário:', error);
+    return res.status(500).json({
+      error: 'Erro ao validar inventário.',
+    });
+  }
+};
 // ================= PÚBLICO =================
 
 exports.getPublicInventory = async (req, res) => {
