@@ -18,7 +18,7 @@ const autoInventoryMailService = require('../services/autoInventoryMailService')
 const generateToken = () => crypto.randomBytes(32).toString('hex');
 
 const getFrontendUrl = () =>
-  process.env.BASE_URL || 'http://localhost:5173';
+  process.env.API_URL || 'http://localhost:5173';
 
 const getPublicLink = (token) =>
   `${getFrontendUrl()}/auto-inventario/${token}`;
