@@ -856,6 +856,46 @@ router.delete(
   ctrl.removeItem
 );
 
+
+router.post(
+  '/:id/accessories',
+  auth(),
+  requireLevel(2),
+  auditAction({
+    module: 'PROJETOS_INSTALACAO',
+    action: 'ACESSORIO_CRIADO',
+    description: 'Adicionou acessório ao projeto de instalação',
+    entity: 'InstallationProjectAccessory',
+  }),
+  ctrl.addAccessory
+);
+
+router.put(
+  '/:id/accessories/:accessoryId',
+  auth(),
+  requireLevel(2),
+  auditAction({
+    module: 'PROJETOS_INSTALACAO',
+    action: 'ACESSORIO_ATUALIZADO',
+    description: 'Atualizou acessório do projeto de instalação',
+    entity: 'InstallationProjectAccessory',
+  }),
+  ctrl.updateAccessory
+);
+
+router.delete(
+  '/:id/accessories/:accessoryId',
+  auth(),
+  requireLevel(2),
+  auditAction({
+    module: 'PROJETOS_INSTALACAO',
+    action: 'ACESSORIO_EXCLUIDO',
+    description: 'Excluiu acessório do projeto de instalação',
+    entity: 'InstallationProjectAccessory',
+  }),
+  ctrl.removeAccessory
+);
+
 /**
  * @swagger
  * /api/installation-projects/{id}/progress:

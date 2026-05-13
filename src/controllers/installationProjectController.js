@@ -13,6 +13,8 @@ const {
   InstallationProjectItem,
   InstallationProjectProgress,
   InstallationProjectProgressVehicle,
+  InstallationProjectAccessory,
+  InstallationProjectProgressAccessory,
   Client,
   User,
   Role,
@@ -175,11 +177,19 @@ function normalizeExcelRowKeys(row = {}) {
           model: InstallationProjectProgressVehicle,
           as: 'vehicles',
         },
+        {
+          model: InstallationProjectProgressAccessory,
+          as: 'accessories',
+        },
       ],
     });
 
-    // 🔴 REGRA PRINCIPAL
-    const hasMovement = progressToday.some(p => p.vehicles?.length > 0);
+    // Envia se houver equipamento ou acessório lançado no dia
+    const hasMovement = progressToday.some((p) => {
+      const vehiclesCount = Array.isArray(p.vehicles) ? p.vehicles.length : 0;
+      const accessoriesCount = Array.isArray(p.accessories) ? p.accessories.length : 0;
+      return vehiclesCount > 0 || accessoriesCount > 0;
+    });
 
     if (!hasMovement) {
       return;
@@ -364,12 +374,14 @@ async function loadProjectWithDetails(projectId) {
       { model: User, as: 'coordinator', attributes: ['id', 'name'] },
       { model: User, as: 'technician', attributes: ['id', 'name'] },
       { model: InstallationProjectItem, as: 'items' },
+      { model: InstallationProjectAccessory, as: 'accessories' },
       {
         model: InstallationProjectProgress,
         as: 'progress',
         include: [
           { model: User, as: 'author', attributes: ['id', 'name'] },
           { model: InstallationProjectProgressVehicle, as: 'vehicles' },
+          { model: InstallationProjectProgressAccessory, as: 'accessories' },
         ],
       },
     ],
@@ -518,8 +530,19 @@ const progressSchema = Joi.object({
         serial: Joi.string().trim().min(3).max(60).required(),
       })
     )
-    .min(1)
-    .required(),
+    .default([]),
+
+  accessories: Joi.array()
+    .items(
+      Joi.object({
+        accessoryName: Joi.string().trim().min(2).max(120).required(),
+        accessoryCode: Joi.string().trim().allow('', null),
+        plate: Joi.string().trim().min(5).max(10).required(),
+        qty: Joi.number().integer().min(1).default(1),
+        notes: Joi.string().trim().allow('', null),
+      })
+    )
+    .default([]),
 }).options({ abortEarly: false, stripUnknown: true });
 
 function buildCompleteDailyEmailHtml(project, progressList, targetDate) {
@@ -529,6 +552,36 @@ function buildCompleteDailyEmailHtml(project, progressList, targetDate) {
   const done = Number(p.trucksDone || 0);
   const pending = Math.max(total - done, 0);
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  const allAccessories = (progressList || []).flatMap((progress) => {
+    const accessories = Array.isArray(progress.accessories) ? progress.accessories : [];
+
+    return accessories.map((a) => ({
+      date: progress.date,
+      accessoryName: a.accessoryName || '-',
+      plate: a.plate || '-',
+      qty: Number(a.qty || 1),
+      notes: a.notes || '-',
+      status: 'Concluído',
+      unit: p.requestedCity || p.requestedLocationText || '-',
+      company: p.client?.name || p.title || '-',
+    }));
+  });
+
+  const totalAccessoriesPlanned = (p.accessories || []).reduce(
+    (sum, a) => sum + Number(a.qty || 0),
+    0
+  );
+
+  const totalAccessoriesDone = allAccessories.reduce(
+    (sum, a) => sum + Number(a.qty || 0),
+    0
+  );
+
+  const pendingAccessories = Math.max(totalAccessoriesPlanned - totalAccessoriesDone, 0);
+  const accessoryPercent = totalAccessoriesPlanned > 0
+    ? Math.round((totalAccessoriesDone / totalAccessoriesPlanned) * 100)
+    : 0;
 
   const headerColor = p.dailyReportHeaderColor || '#2f7dbd';
   const clientLogo = p.dailyReportClientLogoUrl || '';
@@ -560,6 +613,19 @@ function buildCompleteDailyEmailHtml(project, progressList, targetDate) {
       <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.status}</td>
       <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.unit}</td>
       <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.company}</td>
+    </tr>
+  `).join('');
+
+  const accessoryRows = allAccessories.map((a) => `
+    <tr>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${dayjs(a.date).format('DD/MM/YYYY')}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${a.accessoryName}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${a.plate}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${a.qty}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${a.status}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${a.unit}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${a.company}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${a.notes}</td>
     </tr>
   `).join('');
 
@@ -616,15 +682,15 @@ function buildCompleteDailyEmailHtml(project, progressList, targetDate) {
                   </td>
                   <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
                     <div style="font-size:22px;font-weight:bold;color:#111;">${total}</div>
-                    <div style="font-size:12px;color:#64748b;">Total</div>
+                    <div style="font-size:12px;color:#64748b;">Equip. Total</div>
                   </td>
                   <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
                     <div style="font-size:22px;font-weight:bold;color:#16a34a;">${done}</div>
-                    <div style="font-size:12px;color:#64748b;">Concluído</div>
+                    <div style="font-size:12px;color:#64748b;">Equip. Concluído</div>
                   </td>
                   <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
-                    <div style="font-size:22px;font-weight:bold;color:#f97316;">${pending}</div>
-                    <div style="font-size:12px;color:#64748b;">Pendente</div>
+                    <div style="font-size:22px;font-weight:bold;color:#111;">${totalAccessoriesPlanned}</div>
+                    <div style="font-size:12px;color:#64748b;">Acess. Total</div>
                   </td>
                   <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
                     <div style="font-size:18px;font-weight:bold;color:#111;">${dayjs(targetDate).format('DD/MM/YYYY')}</div>
@@ -637,9 +703,13 @@ function buildCompleteDailyEmailHtml(project, progressList, targetDate) {
 
           <tr>
             <td style="padding:22px 28px;background:#ffffff;">
-              <p style="font-size:14px;line-height:22px;margin:0;">
+              <p style="font-size:14px;line-height:22px;margin:0 0 8px 0;">
                 <strong>${done}</strong> concluídos de <strong>${total}</strong> equipamentos.
                 Percentual de conclusão: <strong>${percent}%</strong>.
+              </p>
+              <p style="font-size:14px;line-height:22px;margin:0;">
+                <strong>${totalAccessoriesDone}</strong> acessório(s) instalado(s) de <strong>${totalAccessoriesPlanned}</strong> previsto(s).
+                Pendente(s): <strong>${pendingAccessories}</strong>. Percentual: <strong>${accessoryPercent}%</strong>.
               </p>
             </td>
           </tr>
@@ -689,6 +759,41 @@ function buildCompleteDailyEmailHtml(project, progressList, targetDate) {
                   }
                 </tbody>
               </table>
+
+              <h3 style="margin:24px 0 12px 0;font-size:18px;color:#111;">
+                Acessórios Instalados
+              </h3>
+
+              <p style="font-size:13px;margin:0 0 10px 0;color:#111;">
+                Previsto: <strong>${totalAccessoriesPlanned}</strong> •
+                Instalado: <strong>${totalAccessoriesDone}</strong> •
+                Pendente: <strong>${pendingAccessories}</strong>
+              </p>
+
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;background:#ffffff;border:1px solid #cbd5e1;">
+                <thead>
+                  <tr style="background:#e5edf7;">
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Data</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Acessório</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Placa Carreta</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Qtd</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Status</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Unidade</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Empresa</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Observação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${
+                    accessoryRows ||
+                    `<tr>
+                      <td colspan="8" align="center" style="padding:14px;font-size:13px;color:#64748b;">
+                        Nenhum acessório detalhado.
+                      </td>
+                    </tr>`
+                  }
+                </tbody>
+              </table>
             </td>
           </tr>
 
@@ -714,6 +819,36 @@ function buildCompleteFinalEmailHtml(project, progressList, targetDate, finalMes
   const done = Number(p.trucksDone || 0);
   const pending = Math.max(total - done, 0);
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  const allAccessories = (progressList || []).flatMap((progress) => {
+    const accessories = Array.isArray(progress.accessories) ? progress.accessories : [];
+
+    return accessories.map((a) => ({
+      date: progress.date,
+      accessoryName: a.accessoryName || '-',
+      plate: a.plate || '-',
+      qty: Number(a.qty || 1),
+      notes: a.notes || '-',
+      status: 'Concluído',
+      unit: p.requestedCity || p.requestedLocationText || '-',
+      company: p.client?.name || p.title || '-',
+    }));
+  });
+
+  const totalAccessoriesPlanned = (p.accessories || []).reduce(
+    (sum, a) => sum + Number(a.qty || 0),
+    0
+  );
+
+  const totalAccessoriesDone = allAccessories.reduce(
+    (sum, a) => sum + Number(a.qty || 0),
+    0
+  );
+
+  const pendingAccessories = Math.max(totalAccessoriesPlanned - totalAccessoriesDone, 0);
+  const accessoryPercent = totalAccessoriesPlanned > 0
+    ? Math.round((totalAccessoriesDone / totalAccessoriesPlanned) * 100)
+    : 0;
 
   const headerColor = p.dailyReportHeaderColor || '#2f7dbd';
   const clientLogo = p.dailyReportClientLogoUrl || '';
@@ -751,6 +886,19 @@ function buildCompleteFinalEmailHtml(project, progressList, targetDate, finalMes
       <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.status}</td>
       <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.unit}</td>
       <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${v.company}</td>
+    </tr>
+  `).join('');
+
+  const accessoryRows = allAccessories.map((a) => `
+    <tr>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${dayjs(a.date).format('DD/MM/YYYY')}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${a.accessoryName}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${a.plate}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${a.qty}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${a.status}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${a.unit}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${a.company}</td>
+      <td style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">${a.notes}</td>
     </tr>
   `).join('');
 
@@ -807,15 +955,15 @@ function buildCompleteFinalEmailHtml(project, progressList, targetDate, finalMes
                   </td>
                   <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
                     <div style="font-size:22px;font-weight:bold;color:#111;">${total}</div>
-                    <div style="font-size:12px;color:#64748b;">Total</div>
+                    <div style="font-size:12px;color:#64748b;">Equip. Total</div>
                   </td>
                   <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
                     <div style="font-size:22px;font-weight:bold;color:#16a34a;">${done}</div>
-                    <div style="font-size:12px;color:#64748b;">Concluído</div>
+                    <div style="font-size:12px;color:#64748b;">Equip. Concluído</div>
                   </td>
                   <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
-                    <div style="font-size:22px;font-weight:bold;color:#f97316;">${pending}</div>
-                    <div style="font-size:12px;color:#64748b;">Pendente</div>
+                    <div style="font-size:22px;font-weight:bold;color:#111;">${totalAccessoriesPlanned}</div>
+                    <div style="font-size:12px;color:#64748b;">Acess. Total</div>
                   </td>
                   <td width="20%" align="center" style="padding:15px;border-bottom:1px solid #d1d5db;">
                     <div style="font-size:18px;font-weight:bold;color:#111;">${dayjs(p.endAt || targetDate).format('DD/MM/YYYY')}</div>
@@ -834,13 +982,16 @@ function buildCompleteFinalEmailHtml(project, progressList, targetDate, finalMes
 
               <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;border:1px solid #d1d5db;">
                 <tr>
-                  <td width="33%" style="padding:10px;font-size:13px;border-right:1px solid #d1d5db;">
+                  <td width="25%" style="padding:10px;font-size:13px;border-right:1px solid #d1d5db;">
                     <strong>Dias com lançamento:</strong><br/>${totalDays}
                   </td>
-                  <td width="33%" style="padding:10px;font-size:13px;border-right:1px solid #d1d5db;">
-                    <strong>Total lançado:</strong><br/>${totalInstalled}
+                  <td width="25%" style="padding:10px;font-size:13px;border-right:1px solid #d1d5db;">
+                    <strong>Equipamentos lançados:</strong><br/>${totalInstalled}
                   </td>
-                  <td width="34%" style="padding:10px;font-size:13px;">
+                  <td width="25%" style="padding:10px;font-size:13px;border-right:1px solid #d1d5db;">
+                    <strong>Acessórios lançados:</strong><br/>${totalAccessoriesDone}/${totalAccessoriesPlanned}
+                  </td>
+                  <td width="25%" style="padding:10px;font-size:13px;">
                     <strong>Percentual final:</strong><br/>${percent}%
                   </td>
                 </tr>
@@ -871,9 +1022,13 @@ function buildCompleteFinalEmailHtml(project, progressList, targetDate, finalMes
 
           <tr>
             <td style="padding:0 28px 28px 28px;background:#ffffff;">
-              <p style="font-size:14px;line-height:22px;margin:0 0 14px 0;">
+              <p style="font-size:14px;line-height:22px;margin:0 0 8px 0;">
                 <strong>${done}</strong> concluídos de <strong>${total}</strong> equipamentos.
                 Percentual final de conclusão: <strong>${percent}%</strong>.
+              </p>
+              <p style="font-size:14px;line-height:22px;margin:0 0 14px 0;">
+                <strong>${totalAccessoriesDone}</strong> acessório(s) instalado(s) de <strong>${totalAccessoriesPlanned}</strong> previsto(s).
+                Pendente(s): <strong>${pendingAccessories}</strong>. Percentual: <strong>${accessoryPercent}%</strong>.
               </p>
 
               <h3 style="margin:0 0 12px 0;font-size:18px;color:#111;">
@@ -899,6 +1054,41 @@ function buildCompleteFinalEmailHtml(project, progressList, targetDate, finalMes
                     `<tr>
                       <td colspan="8" align="center" style="padding:14px;font-size:13px;color:#64748b;">
                         Nenhum equipamento detalhado.
+                      </td>
+                    </tr>`
+                  }
+                </tbody>
+              </table>
+
+              <h3 style="margin:24px 0 12px 0;font-size:18px;color:#111;">
+                Acessórios Instalados
+              </h3>
+
+              <p style="font-size:13px;margin:0 0 10px 0;color:#111;">
+                Previsto: <strong>${totalAccessoriesPlanned}</strong> •
+                Instalado: <strong>${totalAccessoriesDone}</strong> •
+                Pendente: <strong>${pendingAccessories}</strong>
+              </p>
+
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;background:#ffffff;border:1px solid #cbd5e1;">
+                <thead>
+                  <tr style="background:#e5edf7;">
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Data</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Acessório</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Placa Carreta</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Qtd</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Status</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Unidade</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Empresa</th>
+                    <th align="left" style="padding:7px;border:1px solid #cbd5e1;font-size:11px;color:#111;">Observação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${
+                    accessoryRows ||
+                    `<tr>
+                      <td colspan="8" align="center" style="padding:14px;font-size:13px;color:#64748b;">
+                        Nenhum acessório detalhado.
                       </td>
                     </tr>`
                   }
@@ -1147,6 +1337,7 @@ module.exports = {
         { model: User, as: 'coordinator', attributes: ['id', 'name'] },
         { model: User, as: 'technician', attributes: ['id', 'name'] },
         { model: InstallationProjectItem, as: 'items', required: false },
+        { model: InstallationProjectAccessory, as: 'accessories', required: false },
       ],
     });
 
@@ -1624,10 +1815,16 @@ async updateDailyReportSettings(req, res) {
             include: [
               { model: User, as: 'author', attributes: ['id', 'name'] },
               { model: InstallationProjectProgressVehicle, as: 'vehicles' },
+              { model: InstallationProjectProgressAccessory, as: 'accessories' },
             ],
           });
 
-          const html = finalEmailHtml(p, progressList, value.message);
+          const html = buildCompleteFinalEmailHtml(
+            p,
+            progressList,
+            dayjs().format('YYYY-MM-DD'),
+            value.message
+          );
 
           await sendMail({
             to,
@@ -1771,9 +1968,89 @@ async updateDailyReportSettings(req, res) {
     return ok(res, { message: 'Item excluído com sucesso.' });
   },
 
+
+  async addAccessory(req, res) {
+    const schema = Joi.object({
+      accessoryName: Joi.string().trim().required(),
+      accessoryCode: Joi.string().trim().allow('', null),
+      qty: Joi.number().integer().min(1).default(1),
+      isTrailer: Joi.boolean().default(true),
+    }).options({ abortEarly: false, stripUnknown: true });
+
+    const { error, value } = schema.validate(req.body);
+    if (error) return bad(res, error.message);
+
+    const project = await InstallationProject.findByPk(req.params.id);
+    if (!project) return notFound(res, 'Projeto não encontrado');
+
+    const accessory = await InstallationProjectAccessory.create({
+      projectId: project.id,
+      accessoryName: value.accessoryName,
+      accessoryCode: value.accessoryCode || null,
+      qty: value.qty,
+      isTrailer: value.isTrailer,
+    });
+
+    await project.update({ updatedById: req.user.id });
+
+    return created(res, accessory);
+  },
+
+  async updateAccessory(req, res) {
+    const schema = Joi.object({
+      accessoryName: Joi.string().trim().required(),
+      accessoryCode: Joi.string().trim().allow('', null),
+      qty: Joi.number().integer().min(1).required(),
+      isTrailer: Joi.boolean().default(true),
+    }).options({ abortEarly: false, stripUnknown: true });
+
+    const { error, value } = schema.validate(req.body);
+    if (error) return bad(res, error.message);
+
+    const project = await InstallationProject.findByPk(req.params.id);
+    if (!project) return notFound(res, 'Projeto não encontrado');
+
+    const accessory = await InstallationProjectAccessory.findOne({
+      where: { id: req.params.accessoryId, projectId: project.id },
+    });
+
+    if (!accessory) return notFound(res, 'Acessório não encontrado');
+
+    await accessory.update({
+      accessoryName: value.accessoryName,
+      accessoryCode: value.accessoryCode || null,
+      qty: value.qty,
+      isTrailer: value.isTrailer,
+    });
+
+    await project.update({ updatedById: req.user.id });
+
+    return ok(res, accessory);
+  },
+
+  async removeAccessory(req, res) {
+    const project = await InstallationProject.findByPk(req.params.id);
+    if (!project) return notFound(res, 'Projeto não encontrado');
+
+    const accessory = await InstallationProjectAccessory.findOne({
+      where: { id: req.params.accessoryId, projectId: project.id },
+    });
+
+    if (!accessory) return notFound(res, 'Acessório não encontrado');
+
+    await accessory.destroy();
+    await project.update({ updatedById: req.user.id });
+
+    return ok(res, { message: 'Acessório excluído com sucesso.' });
+  },
+
   async addProgress(req, res) {
     const { error, value } = progressSchema.validate(req.body);
     if (error) return bad(res, error.message);
+
+    if (!value.vehicles.length && !value.accessories.length) {
+      return bad(res, 'Informe pelo menos 1 equipamento ou 1 acessório.');
+    }
 
     const project = await InstallationProject.findByPk(req.params.id);
     if (!project) return notFound(res, 'Projeto não encontrado');
@@ -1800,14 +2077,30 @@ async updateDailyReportSettings(req, res) {
         { transaction: t }
       );
 
-      await InstallationProjectProgressVehicle.bulkCreate(
-        value.vehicles.map((v) => ({
-          progressId: progress.id,
-          plate: String(v.plate).trim().toUpperCase(),
-          serial: String(v.serial).trim(),
-        })),
-        { transaction: t }
-      );
+      if (value.vehicles?.length) {
+        await InstallationProjectProgressVehicle.bulkCreate(
+          value.vehicles.map((v) => ({
+            progressId: progress.id,
+            plate: String(v.plate).trim().toUpperCase(),
+            serial: String(v.serial).trim(),
+          })),
+          { transaction: t }
+        );
+      }
+
+      if (value.accessories?.length) {
+        await InstallationProjectProgressAccessory.bulkCreate(
+          value.accessories.map((a) => ({
+            progressId: progress.id,
+            accessoryName: String(a.accessoryName).trim(),
+            accessoryCode: a.accessoryCode ? String(a.accessoryCode).trim() : null,
+            plate: String(a.plate).trim().toUpperCase(),
+            qty: Number(a.qty || 1),
+            notes: a.notes || null,
+          })),
+          { transaction: t }
+        );
+      }
 
       await recalcProjectStats(project.id, t);
 
@@ -1821,7 +2114,10 @@ async updateDailyReportSettings(req, res) {
       await t.commit();
 
       const full = await InstallationProjectProgress.findByPk(progress.id, {
-        include: [{ model: InstallationProjectProgressVehicle, as: 'vehicles' }],
+        include: [
+          { model: InstallationProjectProgressVehicle, as: 'vehicles' },
+          { model: InstallationProjectProgressAccessory, as: 'accessories' },
+        ],
       });
 
       return created(res, full);
@@ -1835,6 +2131,10 @@ async updateDailyReportSettings(req, res) {
   async updateProgress(req, res) {
     const { error, value } = progressSchema.validate(req.body);
     if (error) return bad(res, error.message);
+
+    if (!value.vehicles.length && !value.accessories.length) {
+      return bad(res, 'Informe pelo menos 1 equipamento ou 1 acessório.');
+    }
 
     const progress = await InstallationProjectProgress.findByPk(req.params.progressId);
     if (!progress) return notFound(res, 'Progresso não encontrado');
@@ -1867,14 +2167,35 @@ async updateDailyReportSettings(req, res) {
         transaction: t,
       });
 
-      await InstallationProjectProgressVehicle.bulkCreate(
-        value.vehicles.map((v) => ({
-          progressId: progress.id,
-          plate: String(v.plate).trim().toUpperCase(),
-          serial: String(v.serial).trim(),
-        })),
-        { transaction: t }
-      );
+      await InstallationProjectProgressAccessory.destroy({
+        where: { progressId: progress.id },
+        transaction: t,
+      });
+
+      if (value.vehicles?.length) {
+        await InstallationProjectProgressVehicle.bulkCreate(
+          value.vehicles.map((v) => ({
+            progressId: progress.id,
+            plate: String(v.plate).trim().toUpperCase(),
+            serial: String(v.serial).trim(),
+          })),
+          { transaction: t }
+        );
+      }
+
+      if (value.accessories?.length) {
+        await InstallationProjectProgressAccessory.bulkCreate(
+          value.accessories.map((a) => ({
+            progressId: progress.id,
+            accessoryName: String(a.accessoryName).trim(),
+            accessoryCode: a.accessoryCode ? String(a.accessoryCode).trim() : null,
+            plate: String(a.plate).trim().toUpperCase(),
+            qty: Number(a.qty || 1),
+            notes: a.notes || null,
+          })),
+          { transaction: t }
+        );
+      }
 
       await recalcProjectStats(project.id, t);
 
@@ -1888,7 +2209,10 @@ async updateDailyReportSettings(req, res) {
       await t.commit();
 
       const full = await InstallationProjectProgress.findByPk(progress.id, {
-        include: [{ model: InstallationProjectProgressVehicle, as: 'vehicles' }],
+        include: [
+          { model: InstallationProjectProgressVehicle, as: 'vehicles' },
+          { model: InstallationProjectProgressAccessory, as: 'accessories' },
+        ],
       });
 
       return ok(res, full);
@@ -1910,6 +2234,11 @@ async updateDailyReportSettings(req, res) {
 
     try {
       await InstallationProjectProgressVehicle.destroy({
+        where: { progressId: progress.id },
+        transaction: t,
+      });
+
+      await InstallationProjectProgressAccessory.destroy({
         where: { progressId: progress.id },
         transaction: t,
       });
@@ -2326,6 +2655,7 @@ async importBaseExcel(req, res) {
       where: { id: { [Op.in]: touchedIds } },
       include: [
         { model: InstallationProjectItem, as: 'items', required: false },
+        { model: InstallationProjectAccessory, as: 'accessories', required: false },
         { model: Client, as: 'client', attributes: ['id', 'name'], required: false },
       ],
       order: [['id', 'DESC']],
@@ -2456,6 +2786,7 @@ async importBaseExcel(req, res) {
         include: [
           { model: Client, as: 'client', attributes: ['id', 'name'] },
           { model: InstallationProjectItem, as: 'items', required: false },
+        { model: InstallationProjectAccessory, as: 'accessories', required: false },
         ],
       });
 
@@ -2478,6 +2809,7 @@ async importBaseExcel(req, res) {
         include: [
           { model: User, as: 'author', attributes: ['id', 'name'] },
           { model: InstallationProjectProgressVehicle, as: 'vehicles' },
+          { model: InstallationProjectProgressAccessory, as: 'accessories' },
         ],
       });
 

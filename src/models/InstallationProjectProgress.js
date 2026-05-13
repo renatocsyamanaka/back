@@ -1,6 +1,5 @@
 const { DataTypes, Model } = require('sequelize');
 const sequelize = require('../db');
-const InstallationProjectProgressVehicle = require('./InstallationProjectProgressVehicle');
 
 class InstallationProjectProgress extends Model {}
 
@@ -32,17 +31,5 @@ InstallationProjectProgress.init(
   }
 );
 
-// associação uma única vez
-InstallationProjectProgress.hasMany(InstallationProjectProgressVehicle, {
-  foreignKey: { name: 'progressId', allowNull: false },
-  as: 'vehicles',
-  onDelete: 'CASCADE',
-  onUpdate: 'CASCADE',
-});
-
-InstallationProjectProgressVehicle.belongsTo(InstallationProjectProgress, {
-  foreignKey: { name: 'progressId', allowNull: false },
-  as: 'progress',
-});
 
 module.exports = InstallationProjectProgress;

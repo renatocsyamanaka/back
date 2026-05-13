@@ -12,6 +12,40 @@ function nl2br(s) {
   return String(s || '').replace(/\n/g, '<br/>');
 }
 
+function accessoriesProjectBlock(p) {
+  const accessories = p?.accessories || [];
+
+  if (!accessories.length) return '';
+
+  const total = accessories.reduce((acc, item) => acc + Number(item.qty || 0), 0);
+  const rows = accessories
+    .map((item) => `<div>• <b>${item.accessoryName}</b>${item.accessoryCode ? ` (${item.accessoryCode})` : ''} — Qtd: <b>${item.qty}</b>${item.isTrailer ? ' — Carreta' : ''}</div>`)
+    .join('');
+
+  return `
+    <div style="margin-top:10px; padding:10px; background:#fff; border:1px solid #eee; border-radius:8px">
+      <div><b>Acessórios previstos:</b> ${total}</div>
+      <div style="margin-top:6px">${rows}</div>
+    </div>`;
+}
+
+function progressAccessoriesBlock(pr) {
+  const accessories = pr?.accessories || [];
+
+  if (!accessories.length) return '';
+
+  const total = accessories.reduce((acc, item) => acc + Number(item.qty || 0), 0);
+  const rows = accessories
+    .map((item) => `<div>• <b>${item.accessoryName}</b> — <b>PLACA CARRETA:</b> ${item.plate} — <b>Qtd:</b> ${item.qty}${item.notes ? ` — ${item.notes}` : ''}</div>`)
+    .join('');
+
+  return `
+    <div style="margin-top:8px">
+      <div><b>Acessórios instalados no dia:</b> ${total}</div>
+      <div style="margin-top:4px">${rows}</div>
+    </div>`;
+}
+
 function baseLayout({ title, bodyHtml }) {
   return `
   <div style="font-family: Arial, sans-serif; color:#111; line-height:1.4">
@@ -40,6 +74,7 @@ function projectBlock(p) {
     <div><b>Prev. fim:</b> ${fmtDate(p.endPlannedAt)}</div>
     <div><b>Status:</b> ${p.status}</div>
     <div><b>Caminhões:</b> ${p.trucksDone}/${p.trucksTotal}</div>
+    ${accessoriesProjectBlock(p)}
   </div>`;
 }
 
@@ -61,6 +96,8 @@ function dailyEmailHtml(p, progressList, dateLabel) {
       .map(v => `<div>• <b>SÉRIE:</b> ${v.serial} <b>PLACA:</b> ${v.plate}</div>`)
       .join('');
 
+    const accessoriesHtml = progressAccessoriesBlock(pr);
+
     return `
       <tr>
         <td style="padding:10px; border-top:1px solid #eee; vertical-align:top; width:140px">
@@ -70,6 +107,7 @@ function dailyEmailHtml(p, progressList, dateLabel) {
         <td style="padding:10px; border-top:1px solid #eee; vertical-align:top">
           <div><b>Caminhões no dia:</b> ${pr.trucksDoneToday}</div>
           ${vehiclesHtml ? `<div style="margin-top:6px">${vehiclesHtml}</div>` : ''}
+          ${accessoriesHtml}
           ${pr.notes ? `<div style="margin-top:8px"><b>Obs:</b><br/>${nl2br(pr.notes)}</div>` : ''}
         </td>
       </tr>`;

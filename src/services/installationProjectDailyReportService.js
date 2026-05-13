@@ -5,6 +5,7 @@ const {
   InstallationProject,
   InstallationProjectProgress,
   InstallationProjectProgressVehicle,
+  InstallationProjectProgressAccessory,
   Client,
   User,
 } = require('../models');
@@ -172,6 +173,7 @@ async function sendDailyReport(projectId, options = {}) {
       { model: Client, as: 'client' },
       { model: User, as: 'supervisor', attributes: ['id', 'name', 'email'] },
       { association: 'items' },
+      { association: 'accessories' },
     ],
   });
 
@@ -184,7 +186,10 @@ async function sendDailyReport(projectId, options = {}) {
       projectId,
       date: targetDate,
     },
-    include: [{ model: InstallationProjectProgressVehicle, as: 'vehicles' }],
+    include: [
+      { model: InstallationProjectProgressVehicle, as: 'vehicles' },
+      { model: InstallationProjectProgressAccessory, as: 'accessories' },
+    ],
     order: [['id', 'ASC']],
   });
 

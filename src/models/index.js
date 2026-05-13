@@ -17,6 +17,8 @@ const InstallationProject = require('./InstallationProject');
 const InstallationProjectItem = require('./InstallationProjectItem');
 const InstallationProjectProgress = require('./InstallationProjectProgress');
 const InstallationProjectProgressVehicle = require('./InstallationProjectProgressVehicle');
+const InstallationProjectAccessory = require('./InstallationProjectAccessory');
+const InstallationProjectProgressAccessory = require('./InstallationProjectProgressAccessory');
 const UserRegistrationRequest = require('./UserRegistrationRequest');
 const DeliveryReport = require('./DeliveryReport');
 const DeliveryReportHistory = require('./DeliveryReportHistory');
@@ -666,11 +668,20 @@ Client.hasMany(InstallationProject, { as: 'installationProjects', foreignKey: 'c
 InstallationProject.hasMany(InstallationProjectItem, { as: 'items', foreignKey: 'projectId' });
 InstallationProjectItem.belongsTo(InstallationProject, { as: 'project', foreignKey: 'projectId' });
 
+InstallationProject.hasMany(InstallationProjectAccessory, { as: 'accessories', foreignKey: 'projectId', onDelete: 'CASCADE' });
+InstallationProjectAccessory.belongsTo(InstallationProject, { as: 'project', foreignKey: 'projectId' });
+
 InstallationProject.hasMany(InstallationProjectProgress, { as: 'progress', foreignKey: 'projectId' });
 InstallationProjectProgress.belongsTo(InstallationProject, { as: 'project', foreignKey: 'projectId' });
 
 InstallationProjectProgress.belongsTo(User, { as: 'author', foreignKey: 'createdById' });
 User.hasMany(InstallationProjectProgress, { as: 'installationProgressAuthored', foreignKey: 'createdById' });
+
+InstallationProjectProgress.hasMany(InstallationProjectProgressVehicle, { as: 'vehicles', foreignKey: 'progressId', onDelete: 'CASCADE' });
+InstallationProjectProgressVehicle.belongsTo(InstallationProjectProgress, { as: 'progress', foreignKey: 'progressId' });
+
+InstallationProjectProgress.hasMany(InstallationProjectProgressAccessory, { as: 'accessories', foreignKey: 'progressId', onDelete: 'CASCADE' });
+InstallationProjectProgressAccessory.belongsTo(InstallationProjectProgress, { as: 'progress', foreignKey: 'progressId' });
 
 // ----------------- Exports -----------------
 module.exports = {
@@ -699,6 +710,8 @@ module.exports = {
   InstallationProjectItem,
   InstallationProjectProgress,
   InstallationProjectProgressVehicle,
+  InstallationProjectAccessory,
+  InstallationProjectProgressAccessory,
   PartRequest,
   PartRequestItem,
   PartRequestHistory,
