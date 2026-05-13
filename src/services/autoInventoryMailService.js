@@ -1,6 +1,5 @@
 const nodemailer = require('nodemailer');
 
-const APP_URL = process.env.API_URL || 'http://localhost:5173';
 const API_URL = process.env.BASE_URL || 'http://localhost:3000';
 
 function getTransporter() {
@@ -16,7 +15,7 @@ function getTransporter() {
 }
 
 function getInventoryLink(response) {
-  return `${APP_URL}/auto-inventario/${response.token}`;
+  return `${API_URL}/auto-inventario/${response.token}`;
 }
 
 function getLogoUrl() {
