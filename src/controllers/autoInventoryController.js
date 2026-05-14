@@ -9,9 +9,10 @@ const {
   AutoInventoryItem,
   AutoInventoryResponse,
   AutoInventoryResponseItem,
+  AutoInventoryResponseItemSerial,
   AutoInventoryConfig,
   User,
-  Role,
+  Role
 } = require('../models');
 
 const autoInventoryMailService = require('../services/autoInventoryMailService');
@@ -211,7 +212,13 @@ exports.updateConfig = async (req, res) => {
 
 exports.createItem = async (req, res) => {
   try {
-    const { codigo, nome } = req.body;
+    const {
+      codigo,
+      nome,
+      ativo = true,
+      hasSerialNumber = false,
+      serialNumberRequired = false,
+    } = req.body;
 
     if (!codigo || !nome) {
       return res.status(400).json({
@@ -229,10 +236,14 @@ exports.createItem = async (req, res) => {
       });
     }
 
+    const controlsSerial = !!hasSerialNumber;
+
     const item = await AutoInventoryItem.create({
       codigo,
       nome,
-      ativo: true,
+      ativo: !!ativo,
+      hasSerialNumber: controlsSerial,
+      serialNumberRequired: controlsSerial && !!serialNumberRequired,
     });
 
     return res.status(201).json({
@@ -265,7 +276,14 @@ exports.listItems = async (_req, res) => {
 exports.updateItem = async (req, res) => {
   try {
     const { id } = req.params;
-    const { codigo, nome, ativo } = req.body;
+
+    const {
+      codigo,
+      nome,
+      ativo,
+      hasSerialNumber,
+      serialNumberRequired,
+    } = req.body;
 
     const item = await AutoInventoryItem.findByPk(id);
 
@@ -277,7 +295,16 @@ exports.updateItem = async (req, res) => {
 
     if (codigo !== undefined) item.codigo = codigo;
     if (nome !== undefined) item.nome = nome;
-    if (ativo !== undefined) item.ativo = ativo;
+    if (ativo !== undefined) item.ativo = !!ativo;
+
+    if (hasSerialNumber !== undefined) {
+      item.hasSerialNumber = !!hasSerialNumber;
+    }
+
+    if (serialNumberRequired !== undefined) {
+      item.serialNumberRequired =
+        !!hasSerialNumber && !!serialNumberRequired;
+    }
 
     await item.save();
 
@@ -287,12 +314,12 @@ exports.updateItem = async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao atualizar peça:', error);
+
     return res.status(500).json({
       error: 'Erro ao atualizar peça.',
     });
   }
 };
-
 
 
 // ================= PRESTADORES / ESTOQUE AVANÇADO =================
@@ -843,7 +870,18 @@ exports.getProviderInventory = async (req, res) => {
             {
               model: AutoInventoryItem,
               as: 'item',
-              attributes: ['id', 'codigo', 'nome'],
+              attributes: [
+                'id',
+                'codigo',
+                'nome',
+                'hasSerialNumber',
+                'serialNumberRequired',
+              ],
+            },
+            {
+              model: AutoInventoryResponseItemSerial,
+              as: 'serials',
+              required: false,
             },
           ],
         },
@@ -901,6 +939,66 @@ exports.validateProviderInventory = async (req, res) => {
     });
   }
 };
+
+function parseSerials(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (entry && typeof entry === 'object') {
+          return String(entry.serialNumber || entry.serial || entry.value || '');
+        }
+
+        return String(entry || '');
+      })
+      .flatMap((entry) => entry.split(/\n|,|;/g))
+      .map((serial) => serial.replace(/\D/g, '').trim())
+      .filter(Boolean);
+  }
+
+  return String(value || '')
+    .split(/\n|,|;/g)
+    .map((serial) => serial.replace(/\D/g, '').trim())
+    .filter(Boolean);
+}
+
+async function replaceResponseItemSerials(responseItemId, serials, transaction = null) {
+  if (!AutoInventoryResponseItemSerial) return;
+
+  await AutoInventoryResponseItemSerial.destroy({
+    where: { responseItemId },
+    ...(transaction ? { transaction } : {}),
+  });
+
+  const uniqueSerials = Array.from(new Set(parseSerials(serials)));
+
+  if (!uniqueSerials.length) return;
+
+  await AutoInventoryResponseItemSerial.bulkCreate(
+    uniqueSerials.map((serialNumber) => ({
+      responseItemId,
+      serialNumber,
+    })),
+    transaction ? { transaction } : undefined
+  );
+}
+
+function validateSerialWarning({ item, quantidade, serials }) {
+  const hasSerial = !!item?.hasSerialNumber;
+  const required = !!item?.serialNumberRequired;
+  const qty = Number(quantidade || 0);
+  const cleanSerials = parseSerials(serials);
+
+  if (!hasSerial || !required || qty <= 0 || cleanSerials.length === qty) {
+    return null;
+  }
+
+  if (cleanSerials.length < qty) {
+    return `O item "${item?.nome || 'sem nome'}" possui quantidade ${qty}, mas foram informados ${cleanSerials.length} serial(is). Falta(m) ${qty - cleanSerials.length}.`;
+  }
+
+  return `O item "${item?.nome || 'sem nome'}" possui quantidade ${qty}, mas foram informados ${cleanSerials.length} serial(is). Há ${cleanSerials.length - qty} serial(is) a mais.`;
+}
+
 // ================= PÚBLICO =================
 
 exports.getPublicInventory = async (req, res) => {
@@ -926,11 +1024,26 @@ exports.getPublicInventory = async (req, res) => {
             {
               model: AutoInventoryItem,
               as: 'item',
-              attributes: ['id', 'codigo', 'nome'],
+              where: { ativo: true },
+              required: true,
+              attributes: [
+                'id',
+                'codigo',
+                'nome',
+                'ativo',
+                'hasSerialNumber',
+                'serialNumberRequired',
+              ],
+            },
+            {
+              model: AutoInventoryResponseItemSerial,
+              as: 'serials',
+              required: false,
             },
           ],
         },
       ],
+      order: [[{ model: AutoInventoryResponseItem, as: 'items' }, 'id', 'ASC']],
     });
 
     if (!response) {
@@ -960,6 +1073,8 @@ exports.getPublicInventory = async (req, res) => {
 };
 
 exports.updatePublicInventory = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
   try {
     const { token } = req.params;
     const { items = [], finalizar = false } = req.body;
@@ -972,13 +1087,17 @@ exports.updatePublicInventory = async (req, res) => {
           as: 'items',
         },
       ],
+      transaction,
     });
 
     if (!response) {
+      await transaction.rollback();
       return res.status(404).json({
         error: 'Link inválido ou expirado.',
       });
     }
+
+    const warnings = [];
 
     for (const item of items) {
       const responseItem = await AutoInventoryResponseItem.findOne({
@@ -986,35 +1105,63 @@ exports.updatePublicInventory = async (req, res) => {
           responseId: response.id,
           itemId: item.itemId,
         },
+        include: [
+          {
+            model: AutoInventoryItem,
+            as: 'item',
+            attributes: [
+              'id',
+              'codigo',
+              'nome',
+              'hasSerialNumber',
+              'serialNumberRequired',
+            ],
+          },
+        ],
+        transaction,
       });
 
-      if (responseItem) {
-        responseItem.quantidade =
-          item.quantidade === '' ||
-          item.quantidade === null ||
-          item.quantidade === undefined
-            ? null
-            : Number(item.quantidade);
+      if (!responseItem) continue;
 
-        await responseItem.save();
+      const quantidade =
+        item.quantidade === '' ||
+        item.quantidade === null ||
+        item.quantidade === undefined
+          ? null
+          : Number(item.quantidade);
+
+      const serials = parseSerials(item.serials || item.serialNumbers || item.series);
+      const itemWarning = validateSerialWarning({
+        item: responseItem.item,
+        quantidade,
+        serials,
+      });
+
+      if (itemWarning) warnings.push(itemWarning);
+
+      responseItem.quantidade = quantidade;
+      await responseItem.save({ transaction });
+
+      if (responseItem.item?.hasSerialNumber) {
+        await replaceResponseItemSerials(responseItem.id, serials, transaction);
+      } else {
+        await replaceResponseItemSerials(responseItem.id, [], transaction);
       }
     }
 
-    const status = await detectResponseStatus(
-      response.id,
-      finalizar
-    );
+    const status = await detectResponseStatus(response.id, finalizar);
 
     response.status = status;
     response.lastUpdateAt = new Date();
 
-      if (finalizar && status === 'COMPLETO') {
-        response.submittedAt = new Date();
-      } else {
-        response.submittedAt = null;
-      }
+    if (finalizar && status === 'COMPLETO') {
+      response.submittedAt = new Date();
+    } else {
+      response.submittedAt = null;
+    }
 
-    await response.save();
+    await response.save({ transaction });
+    await transaction.commit();
 
     return res.json({
       message:
@@ -1022,11 +1169,14 @@ exports.updatePublicInventory = async (req, res) => {
           ? 'Inventário enviado com sucesso.'
           : 'Inventário salvo parcialmente. Ainda existem itens sem preenchimento.',
       status,
+      warnings,
     });
   } catch (error) {
+    await transaction.rollback();
+
     console.error('Erro ao atualizar inventário público:', error);
-    return res.status(500).json({
-      error: 'Erro ao salvar inventário.',
+    return res.status(error.statusCode || 500).json({
+      error: error.statusCode ? error.message : 'Erro ao salvar inventário.',
     });
   }
 };
@@ -1489,7 +1639,12 @@ exports.exportMonthlyInventory = async (req, res) => {
                 {
                   model: AutoInventoryItem,
                   as: 'item',
-                  attributes: ['codigo', 'nome'],
+                  attributes: ['codigo', 'nome', 'hasSerialNumber', 'serialNumberRequired'],
+                },
+                {
+                  model: AutoInventoryResponseItemSerial,
+                  as: 'serials',
+                  required: false,
                 },
               ],
             },
@@ -1530,6 +1685,11 @@ exports.exportMonthlyInventory = async (req, res) => {
             responseItem.quantidade === undefined
               ? ''
               : responseItem.quantidade,
+          ControlaSerial: responseItem.item?.hasSerialNumber ? 'Sim' : 'Não',
+          SerialObrigatorio: responseItem.item?.serialNumberRequired ? 'Sim' : 'Não',
+          NumerosSerie: (responseItem.serials || [])
+            .map((serial) => serial.serialNumber)
+            .join('; '),
           AbertoEm: response.openedAt || '',
           EnviadoEm: response.submittedAt || '',
           UltimaAtualizacao: response.lastUpdateAt || '',
