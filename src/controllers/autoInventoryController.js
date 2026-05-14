@@ -11,6 +11,7 @@ const {
   AutoInventoryResponseItem,
   AutoInventoryConfig,
   User,
+  Role,
 } = require('../models');
 
 const autoInventoryMailService = require('../services/autoInventoryMailService');
@@ -22,6 +23,89 @@ const getFrontendUrl = () =>
 
 const getPublicLink = (token) =>
   `${getFrontendUrl()}/auto-inventario/${token}`;
+
+const PROVIDER_KINDS_ALLOWED = new Set(['ATA', 'PRP', 'SPOT', 'PSO']);
+
+function normalizeText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+function roleKindFromRoleName(roleName) {
+  const role = normalizeText(roleName);
+
+  if (role === 'ATA' || role.includes(' ATA')) return 'ATA';
+  if (role === 'PRP' || role.includes(' PRP')) return 'PRP';
+  if (role === 'SPOT' || role.includes(' SPOT')) return 'SPOT';
+  if (role === 'PSO' || role.includes(' PSO')) return 'PSO';
+
+  return 'OTHER';
+}
+
+const roleLevel = (user) => Number(user?.role?.level || 0);
+
+function normalizeId(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+function parseBooleanFilter(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const text = String(value).trim().toLowerCase();
+  if (['true', '1', 'sim', 'yes'].includes(text)) return true;
+  if (['false', '0', 'nao', 'não', 'no'].includes(text)) return false;
+  return null;
+}
+
+async function buildProviderHierarchyMap() {
+  const users = await User.findAll({
+    attributes: ['id', 'name', 'email', 'managerId'],
+    include: [{ model: Role, as: 'role', attributes: ['id', 'name', 'level'] }],
+  });
+
+  const byId = new Map(users.map((user) => [user.id, user]));
+  const hierarchyByProviderId = new Map();
+
+  const findUpstream = (user, minLevel) => {
+    let current = user;
+    const visited = new Set();
+
+    while (current?.managerId && !visited.has(current.managerId)) {
+      visited.add(current.managerId);
+      const manager = byId.get(current.managerId);
+      if (!manager) break;
+
+      if (roleLevel(manager) >= minLevel) {
+        return manager;
+      }
+
+      current = manager;
+    }
+
+    return null;
+  };
+
+  for (const user of users) {
+    const supervisor = findUpstream(user, 3);
+    const coordinator = findUpstream(user, 4);
+
+    hierarchyByProviderId.set(user.id, {
+      supervisor: supervisor
+        ? { id: supervisor.id, name: supervisor.name, email: supervisor.email || null }
+        : null,
+      coordinator: coordinator
+        ? { id: coordinator.id, name: coordinator.name, email: coordinator.email || null }
+        : null,
+    });
+  }
+
+  return hierarchyByProviderId;
+}
 
 const getCycleName = (month, year) => {
   const date = new Date(year, month - 1, 1);
@@ -209,6 +293,177 @@ exports.updateItem = async (req, res) => {
   }
 };
 
+
+
+// ================= PRESTADORES / ESTOQUE AVANÇADO =================
+
+exports.listInventoryProviders = async (req, res) => {
+  try {
+    const {
+      q,
+      coordinatorId,
+      supervisorId,
+      estoqueAvancado,
+      autoInventoryEnabled,
+    } = req.query;
+
+    const selectedCoordinatorId = normalizeId(coordinatorId);
+    const selectedSupervisorId = normalizeId(supervisorId);
+    const estoqueAvancadoFilter = parseBooleanFilter(estoqueAvancado);
+    const autoInventoryFilter = parseBooleanFilter(autoInventoryEnabled);
+
+    const whereUser = {
+      isActive: true,
+      email: { [Op.ne]: null },
+    };
+
+    if (q && String(q).trim()) {
+      const term = `%${String(q).trim()}%`;
+      whereUser[Op.or] = [
+        { name: { [Op.like]: term } },
+        { email: { [Op.like]: term } },
+      ];
+    }
+
+    if (estoqueAvancadoFilter !== null) {
+      whereUser.estoqueAvancado = estoqueAvancadoFilter;
+    }
+
+    if (autoInventoryFilter !== null) {
+      whereUser.autoInventoryEnabled = autoInventoryFilter;
+    }
+
+    const users = await User.findAll({
+      where: whereUser,
+      attributes: [
+        'id',
+        'name',
+        'email',
+        'isActive',
+        'managerId',
+        'estoqueAvancado',
+        'autoInventoryEnabled',
+      ],
+      include: [{ model: Role, as: 'role', attributes: ['id', 'name', 'level'] }],
+      order: [['name', 'ASC']],
+    });
+
+    const hierarchyByProviderId = await buildProviderHierarchyMap();
+
+    let providers = users
+      .map((user) => {
+        const kind = roleKindFromRoleName(user.role?.name);
+        const hierarchy = hierarchyByProviderId.get(user.id) || {};
+
+        return {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          isActive: !!user.isActive,
+          estoqueAvancado: !!user.estoqueAvancado,
+          autoInventoryEnabled: !!user.autoInventoryEnabled,
+          tipoPrestador: kind,
+          role: user.role
+            ? { id: user.role.id, name: user.role.name, level: user.role.level }
+            : null,
+          supervisor: hierarchy.supervisor || null,
+          coordinator: hierarchy.coordinator || null,
+          supervisorId: hierarchy.supervisor?.id || null,
+          coordinatorId: hierarchy.coordinator?.id || null,
+        };
+      })
+      .filter((provider) => PROVIDER_KINDS_ALLOWED.has(provider.tipoPrestador));
+
+    providers = providers.filter((provider) => {
+      if (selectedCoordinatorId && provider.coordinatorId !== selectedCoordinatorId) return false;
+      if (selectedSupervisorId && provider.supervisorId !== selectedSupervisorId) return false;
+      return true;
+    });
+
+    const coordinatorsMap = new Map();
+    const supervisorsMap = new Map();
+
+    providers.forEach((provider) => {
+      if (provider.coordinator?.id) coordinatorsMap.set(provider.coordinator.id, provider.coordinator);
+      if (provider.supervisor?.id) supervisorsMap.set(provider.supervisor.id, provider.supervisor);
+    });
+
+    return res.json({
+      providers,
+      resumo: {
+        total: providers.length,
+        estoqueAvancado: providers.filter((p) => p.estoqueAvancado).length,
+        semEstoqueAvancado: providers.filter((p) => !p.estoqueAvancado).length,
+        autoInventoryEnabled: providers.filter((p) => p.autoInventoryEnabled).length,
+        autoInventoryDisabled: providers.filter((p) => !p.autoInventoryEnabled).length,
+      },
+      filters: {
+        coordinators: Array.from(coordinatorsMap.values()).sort((a, b) =>
+          String(a.name || '').localeCompare(String(b.name || ''))
+        ),
+        supervisors: Array.from(supervisorsMap.values()).sort((a, b) =>
+          String(a.name || '').localeCompare(String(b.name || ''))
+        ),
+        tiposPrestador: Array.from(PROVIDER_KINDS_ALLOWED),
+      },
+    });
+  } catch (error) {
+    console.error('Erro ao listar prestadores do auto inventário:', error);
+    return res.status(500).json({
+      error: 'Erro ao listar prestadores do auto inventário.',
+    });
+  }
+};
+
+exports.updateProviderAutoInventory = async (req, res) => {
+  try {
+    const { providerId } = req.params;
+    const { enabled } = req.body;
+
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({
+        error: 'Informe enabled como true ou false.',
+      });
+    }
+
+    const provider = await User.findByPk(Number(providerId), {
+      attributes: ['id', 'name', 'email', 'autoInventoryEnabled'],
+    });
+
+    if (!provider) {
+      return res.status(404).json({
+        error: 'Prestador não encontrado.',
+      });
+    }
+
+    await User.update(
+      { autoInventoryEnabled: enabled },
+      {
+        where: { id: provider.id },
+        validate: false,
+        hooks: false,
+      }
+    );
+
+    return res.json({
+      message: enabled
+        ? 'Prestador habilitado para estoque avançado.'
+        : 'Prestador desabilitado do estoque avançado.',
+      provider: {
+        id: provider.id,
+        name: provider.name,
+        email: provider.email,
+        autoInventoryEnabled: enabled,
+      },
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar estoque avançado do prestador:', error);
+    return res.status(500).json({
+      error: 'Erro ao atualizar estoque avançado do prestador.',
+    });
+  }
+};
+
 // ================= CICLOS =================
 
 exports.createCycle = async (req, res) => {
@@ -240,7 +495,7 @@ exports.createCycle = async (req, res) => {
       status: 'ABERTO',
     });
 
-    const providers = await User.findAll({
+    const providerRows = await User.findAll({
       where: {
         isActive: true,
         autoInventoryEnabled: true,
@@ -248,7 +503,12 @@ exports.createCycle = async (req, res) => {
           [Op.ne]: null,
         },
       },
+      include: [{ model: Role, as: 'role', attributes: ['id', 'name', 'level'] }],
     });
+
+    const providers = providerRows.filter((provider) =>
+      PROVIDER_KINDS_ALLOWED.has(getAutoInventoryProviderKind(provider))
+    );
 
     const items = await AutoInventoryItem.findAll({
       where: { ativo: true },
@@ -346,7 +606,7 @@ exports.syncCycleProviders = async (req, res) => {
       });
     }
 
-    const providers = await User.findAll({
+    const providerRows = await User.findAll({
       where: {
         isActive: true,
         autoInventoryEnabled: true,
@@ -354,7 +614,12 @@ exports.syncCycleProviders = async (req, res) => {
           [Op.ne]: null,
         },
       },
+      include: [{ model: Role, as: 'role', attributes: ['id', 'name', 'level'] }],
     });
+
+    const providers = providerRows.filter((provider) =>
+      PROVIDER_KINDS_ALLOWED.has(getAutoInventoryProviderKind(provider))
+    );
 
     const items = await AutoInventoryItem.findAll({
       where: { ativo: true },
@@ -424,7 +689,10 @@ exports.syncCycleProviders = async (req, res) => {
 
 exports.getDashboard = async (req, res) => {
   try {
-    const { month, year } = req.query;
+    const { month, year, coordinatorId, supervisorId } = req.query;
+
+    const selectedCoordinatorId = normalizeId(coordinatorId);
+    const selectedSupervisorId = normalizeId(supervisorId);
 
     const whereCycle = {};
 
@@ -445,7 +713,7 @@ exports.getDashboard = async (req, res) => {
             {
               model: User,
               as: 'provider',
-              attributes: ['id', 'name', 'email', 'isActive'],
+              attributes: ['id', 'name', 'email', 'isActive', 'managerId'],
             },
             {
               model: User,
@@ -475,33 +743,46 @@ exports.getDashboard = async (req, res) => {
     }
 
     const config = await getOrCreateConfig();
+    const hierarchyByProviderId = await buildProviderHierarchyMap();
 
-    const providers = (cycle.responses || []).map((response) => {
-      const items = response.items || [];
+    const providers = (cycle.responses || [])
+      .map((response) => {
+        const items = response.items || [];
+        const hierarchy = hierarchyByProviderId.get(response.providerId) || {};
 
-      const totalItens = items.length;
-      const preenchidos = items.filter(
-        (i) => i.quantidade !== null && i.quantidade !== undefined
-      ).length;
+        const totalItens = items.length;
+        const preenchidos = items.filter(
+          (i) => i.quantidade !== null && i.quantidade !== undefined
+        ).length;
 
-      return {
-        responseId: response.id,
-        providerId: response.providerId,
-        prestador: response.provider,
-        status: response.status,
-        link: getPublicLink(response.token),
-        openedAt: response.openedAt,
-        submittedAt: response.submittedAt,
-        lastUpdateAt: response.lastUpdateAt,
-        reminderSentAt: response.reminderSentAt,
-        completedMailSentAt: response.completedMailSentAt,
-        validatedAt: response.validatedAt,
-        validatedBy: response.validatedBy,
-        totalItens,
-        preenchidos,
-        faltantes: totalItens - preenchidos,
-      };
-    });
+        return {
+          responseId: response.id,
+          providerId: response.providerId,
+          prestador: response.provider,
+          provider: response.provider,
+          supervisor: hierarchy.supervisor || null,
+          coordinator: hierarchy.coordinator || null,
+          supervisorId: hierarchy.supervisor?.id || null,
+          coordinatorId: hierarchy.coordinator?.id || null,
+          status: response.status,
+          link: getPublicLink(response.token),
+          openedAt: response.openedAt,
+          submittedAt: response.submittedAt,
+          lastUpdateAt: response.lastUpdateAt,
+          reminderSentAt: response.reminderSentAt,
+          completedMailSentAt: response.completedMailSentAt,
+          validatedAt: response.validatedAt,
+          validatedBy: response.validatedBy,
+          totalItens,
+          preenchidos,
+          faltantes: totalItens - preenchidos,
+        };
+      })
+      .filter((provider) => {
+        if (selectedCoordinatorId && provider.coordinatorId !== selectedCoordinatorId) return false;
+        if (selectedSupervisorId && provider.supervisorId !== selectedSupervisorId) return false;
+        return true;
+      });
 
     return res.json({
       cycle: {
@@ -553,7 +834,7 @@ exports.getProviderInventory = async (req, res) => {
         {
           model: User,
           as: 'provider',
-          attributes: ['id', 'name', 'email', 'isActive'],
+          attributes: ['id', 'name', 'email', 'isActive', 'managerId'],
         },
         {
           model: AutoInventoryResponseItem,
@@ -779,7 +1060,7 @@ exports.resendProviderInventory = async (req, res) => {
         {
           model: User,
           as: 'provider',
-          attributes: ['id', 'name', 'email', 'isActive'],
+          attributes: ['id', 'name', 'email', 'isActive', 'managerId'],
         },
       ],
     });
@@ -825,7 +1106,7 @@ exports.sendCycleEmails = async (req, res) => {
             {
               model: User,
               as: 'provider',
-              attributes: ['id', 'name', 'email', 'isActive'],
+              attributes: ['id', 'name', 'email', 'isActive', 'managerId'],
             },
           ],
         },
@@ -873,6 +1154,296 @@ exports.sendCycleEmails = async (req, res) => {
     console.error('Erro ao enviar e-mails do ciclo:', error);
     return res.status(500).json({
       error: 'Erro ao enviar e-mails do ciclo.',
+    });
+  }
+};
+
+
+
+// ================= PRESTADORES / CONFIGURAÇÃO DE ENVIO =================
+
+function normalizeRoleNameAutoInventory(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+function getAutoInventoryProviderKind(userOrRoleName) {
+  const roleName =
+    typeof userOrRoleName === 'string'
+      ? userOrRoleName
+      : userOrRoleName?.role?.name;
+
+  const estoqueAvancado =
+    typeof userOrRoleName === 'object'
+      ? !!userOrRoleName?.estoqueAvancado
+      : false;
+
+  const role = normalizeRoleNameAutoInventory(roleName);
+
+  // Prestadores cadastrados diretamente pelo perfil/cargo
+  if (role === 'ATA' || /\bATA\b/.test(role)) return 'ATA';
+  if (role === 'PRP' || /\bPRP\b/.test(role)) return 'PRP';
+  if (role === 'SPOT' || /\bSPOT\b/.test(role)) return 'SPOT';
+  if (role === 'PSO' || /\bPSO\b/.test(role)) return 'PSO';
+
+  // No mapa de prestadores, muitos ATAs aparecem como TECNICO + Estoque Avançado.
+  // Por isso eles também precisam entrar no Auto Inventário.
+  if (estoqueAvancado && /\bTECNICO\b/.test(role)) return 'ATA';
+
+  return null;
+}
+
+function parseBooleanQuery(value) {
+  if (value === undefined || value === null || value === '') return null;
+
+  const normalized = String(value).trim().toLowerCase();
+
+  if (['1', 'true', 'sim', 'yes', 's'].includes(normalized)) return true;
+  if (['0', 'false', 'nao', 'não', 'no', 'n'].includes(normalized)) return false;
+
+  return null;
+}
+
+function findAutoInventoryUpstream(user, usersById, minLevel) {
+  let current = user;
+  const visited = new Set();
+
+  while (current && current.managerId) {
+    if (visited.has(current.managerId)) break;
+    visited.add(current.managerId);
+
+    const manager = usersById.get(current.managerId);
+    if (!manager) break;
+
+    if ((Number(manager.role?.level) || 0) >= minLevel) {
+      return manager;
+    }
+
+    current = manager;
+  }
+
+  return null;
+}
+
+function optionFromUser(user) {
+  if (!user) return null;
+
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email || null,
+  };
+}
+
+exports.listInventoryProviders = async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const coordinatorId = req.query.coordinatorId ? Number(req.query.coordinatorId) : null;
+    const supervisorId = req.query.supervisorId ? Number(req.query.supervisorId) : null;
+    const estoqueAvancadoFilter = parseBooleanQuery(req.query.estoqueAvancado);
+    const autoInventoryFilter = parseBooleanQuery(req.query.autoInventoryEnabled);
+
+    const users = await User.findAll({
+      // Não filtra por isActive aqui para manter a mesma base do cadastro/mapa de prestadores.
+      // O envio mensal continua dependendo somente de autoInventoryEnabled.
+      where: {},
+      attributes: [
+        'id',
+        'name',
+        'email',
+        'managerId',
+        'isActive',
+        'estoqueAvancado',
+        'autoInventoryEnabled',
+        'vendorCode',
+        'serviceAreaCode',
+        'serviceAreaName',
+        'tipoAtendimento',
+      ],
+      include: [
+        {
+          model: Role,
+          as: 'role',
+          attributes: ['id', 'name', 'level'],
+          required: false,
+        },
+      ],
+      order: [['name', 'ASC']],
+    });
+
+    const usersById = new Map(users.map((user) => [user.id, user]));
+    const allowedKinds = new Set(['ATA', 'PRP', 'SPOT', 'PSO']);
+
+    const baseProviders = users
+      .map((user) => {
+        const tipoPrestador = getAutoInventoryProviderKind(user);
+
+        if (!allowedKinds.has(tipoPrestador)) return null;
+
+        const supervisor = findAutoInventoryUpstream(user, usersById, 3);
+        const coordinator = findAutoInventoryUpstream(user, usersById, 4);
+
+        return {
+          id: user.id,
+          name: user.name,
+          email: user.email || null,
+          tipoPrestador,
+          role: user.role
+            ? {
+                id: user.role.id,
+                name: user.role.name,
+                level: user.role.level,
+              }
+            : null,
+          estoqueAvancado: !!user.estoqueAvancado,
+          autoInventoryEnabled: !!user.autoInventoryEnabled,
+          vendorCode: user.vendorCode || null,
+          serviceAreaCode: user.serviceAreaCode || null,
+          serviceAreaName: user.serviceAreaName || null,
+          tipoAtendimento: user.tipoAtendimento || null,
+          coordinator: optionFromUser(coordinator),
+          coordinatorId: coordinator?.id || null,
+          supervisor: optionFromUser(supervisor),
+          supervisorId: supervisor?.id || null,
+        };
+      })
+      .filter(Boolean);
+
+    const coordinatorMap = new Map();
+    const supervisorMap = new Map();
+
+    for (const provider of baseProviders) {
+      if (provider.coordinator && !coordinatorMap.has(provider.coordinator.id)) {
+        coordinatorMap.set(provider.coordinator.id, provider.coordinator);
+      }
+
+      if (provider.supervisor && !supervisorMap.has(provider.supervisor.id)) {
+        supervisorMap.set(provider.supervisor.id, provider.supervisor);
+      }
+    }
+
+    let providers = baseProviders;
+
+    if (q) {
+      providers = providers.filter((provider) => {
+        const searchable = [
+          provider.name,
+          provider.email,
+          provider.vendorCode,
+          provider.serviceAreaCode,
+          provider.serviceAreaName,
+          provider.tipoPrestador,
+          provider.coordinator?.name,
+          provider.supervisor?.name,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+
+        return searchable.includes(q);
+      });
+    }
+
+    if (coordinatorId) {
+      providers = providers.filter((provider) => Number(provider.coordinatorId) === coordinatorId);
+    }
+
+    if (supervisorId) {
+      providers = providers.filter((provider) => Number(provider.supervisorId) === supervisorId);
+    }
+
+    if (estoqueAvancadoFilter !== null) {
+      providers = providers.filter((provider) => provider.estoqueAvancado === estoqueAvancadoFilter);
+    }
+
+    if (autoInventoryFilter !== null) {
+      providers = providers.filter((provider) => provider.autoInventoryEnabled === autoInventoryFilter);
+    }
+
+    return res.json({
+      providers,
+      resumo: {
+        total: providers.length,
+        estoqueAvancado: providers.filter((provider) => provider.estoqueAvancado).length,
+        semEstoqueAvancado: providers.filter((provider) => !provider.estoqueAvancado).length,
+        autoInventarioAtivo: providers.filter((provider) => provider.autoInventoryEnabled).length,
+        autoInventarioInativo: providers.filter((provider) => !provider.autoInventoryEnabled).length,
+        totalBase: baseProviders.length,
+      },
+      filters: {
+        coordinators: Array.from(coordinatorMap.values()).sort((a, b) => a.name.localeCompare(b.name)),
+        supervisors: Array.from(supervisorMap.values()).sort((a, b) => a.name.localeCompare(b.name)),
+      },
+    });
+  } catch (error) {
+    console.error('Erro ao listar prestadores do auto inventário:', error);
+
+    return res.status(500).json({
+      error: 'Erro ao listar prestadores do auto inventário.',
+    });
+  }
+};
+
+exports.updateProviderAutoInventory = async (req, res) => {
+  try {
+    const { providerId } = req.params;
+    const enabled = !!req.body.enabled;
+
+    const provider = await User.findByPk(providerId, {
+      include: [
+        {
+          model: Role,
+          as: 'role',
+          attributes: ['id', 'name', 'level'],
+          required: false,
+        },
+      ],
+    });
+
+    if (!provider) {
+      return res.status(404).json({ error: 'Prestador não encontrado.' });
+    }
+
+    const tipoPrestador = getAutoInventoryProviderKind(provider);
+
+    if (!['ATA', 'PRP', 'SPOT', 'PSO'].includes(tipoPrestador)) {
+      return res.status(400).json({
+        error: 'Auto inventário permitido somente para prestadores ATA, PRP, SPOT ou PSO.',
+      });
+    }
+
+    await User.update(
+      { autoInventoryEnabled: enabled },
+      {
+        where: { id: Number(providerId) },
+        validate: false,
+        hooks: false,
+      }
+    );
+
+    return res.json({
+      message: enabled
+        ? 'Prestador habilitado para auto inventário.'
+        : 'Prestador desabilitado do auto inventário.',
+      provider: {
+        id: provider.id,
+        name: provider.name,
+        email: provider.email || null,
+        tipoPrestador,
+        estoqueAvancado: !!provider.estoqueAvancado,
+        autoInventoryEnabled: enabled,
+      },
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar prestador do auto inventário:', error);
+
+    return res.status(500).json({
+      error: 'Erro ao atualizar prestador do auto inventário.',
     });
   }
 };

@@ -385,6 +385,21 @@ router.get(
  *       403:
  *         description: Sem permissão
  */
+
+router.get(
+  '/providers-management',
+  auth(),
+  requirePermission('AUTO_INVENTORY_VIEW'),
+  controller.listInventoryProviders
+);
+
+router.patch(
+  '/providers/:providerId/auto-inventory',
+  auth(),
+  requirePermission('AUTO_INVENTORY_ADMIN'),
+  controller.updateProviderAutoInventory
+);
+
 router.get(
   '/providers/:providerId',
   auth(),

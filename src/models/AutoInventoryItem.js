@@ -15,6 +15,16 @@ const AutoInventoryItem = sequelize.define('AutoInventoryItem', {
     type: DataTypes.BOOLEAN,
     defaultValue: true,
   },
+  hasSerialNumber: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  },
+  serialNumberRequired: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  },
 });
 
 module.exports = AutoInventoryItem;

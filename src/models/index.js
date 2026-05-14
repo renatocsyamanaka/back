@@ -53,6 +53,7 @@ const AutoInventoryCycle = require('./AutoInventoryCycle');
 const AutoInventoryItem = require('./AutoInventoryItem');
 const AutoInventoryResponse = require('./AutoInventoryResponse');
 const AutoInventoryResponseItem = require('./AutoInventoryResponseItem');
+const AutoInventoryResponseItemSerial = require('./AutoInventoryResponseItemSerial');
 const AutoInventoryConfig = require('./AutoInventoryConfig');
 
 // ----------------- Whatsapp  -----------------
@@ -111,6 +112,18 @@ AutoInventoryItem.hasMany(AutoInventoryResponseItem, {
 AutoInventoryResponseItem.belongsTo(AutoInventoryItem, {
   as: 'item',
   foreignKey: 'itemId',
+});
+
+AutoInventoryResponseItem.hasMany(AutoInventoryResponseItemSerial, {
+  as: 'serials',
+  foreignKey: 'responseItemId',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE',
+});
+
+AutoInventoryResponseItemSerial.belongsTo(AutoInventoryResponseItem, {
+  as: 'responseItem',
+  foreignKey: 'responseItemId',
 });
 
 // ----------------- LOGS Usuarios -----------------
@@ -736,5 +749,6 @@ module.exports = {
   AutoInventoryItem,
   AutoInventoryResponse,
   AutoInventoryResponseItem,
+  AutoInventoryResponseItemSerial,
   AutoInventoryConfig,
 };
