@@ -184,6 +184,115 @@ function isInviteExpired(invite) {
   return !!invite?.expiresAt && new Date(invite.expiresAt).getTime() < Date.now();
 }
 
+function buildInviteEmailTemplate({ providerName, link }) {
+  const logoUrl =
+    process.env.EMAIL_LOGO_URL ||
+    'https://app.projetos-rc.online/logo_branca.png';
+
+  return `
+    <div style="margin:0;padding:0;background:#4b4f54;font-family:Arial,Helvetica,sans-serif;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#4b4f54;padding:16px 0;">
+        <tr>
+          <td align="center">
+            <table width="680" cellpadding="0" cellspacing="0"
+              style="background:#242424;border-radius:16px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.35);">
+
+              <tr>
+                <td style="padding:32px 32px 18px;text-align:center;">
+                  <img
+                    src="${logoUrl}"
+                    alt="Omnilink"
+                    style="width:260px;max-width:90%;height:auto;display:block;margin:0 auto;"
+                  />
+                </td>
+              </tr>
+
+              <tr>
+                <td style="padding:42px 32px 28px;">
+
+                  <h2 style="margin:0;color:#bfdbfe;font-size:24px;">
+                    Cadastro de Homologação
+                  </h2>
+
+                  <p style="margin:10px 0 26px;color:#cbd5e1;font-size:15px;line-height:1.6;">
+                    Está disponível o preenchimento do seu cadastro e envio dos documentos para homologação.
+                  </p>
+
+                  <div
+                    style="
+                      padding:18px;
+                      background:#555b5f;
+                      border:1px solid #cbd5e1;
+                      border-radius:12px;
+                    "
+                  >
+                    <p style="margin:0;color:#dbeafe;font-size:15px;line-height:1.6;">
+                      Olá, <b>${providerName || 'Prestador'}</b>.
+                    </p>
+
+                    <p style="margin:14px 0 0;color:#dbeafe;font-size:15px;line-height:1.6;">
+                      Solicitamos que preencha seus dados cadastrais e envie os documentos necessários para análise.
+                    </p>
+
+                    <p style="margin:14px 0 0;color:#dbeafe;font-size:15px;line-height:1.6;">
+                      O preenchimento é obrigatório para continuidade do processo de homologação.
+                    </p>
+                  </div>
+
+                  <div style="text-align:center;margin:30px 0;">
+                    <a
+                      href="${link}"
+                      target="_blank"
+                      style="
+                        background:#0070b8;
+                        color:#ffffff;
+                        text-decoration:none;
+                        padding:14px 26px;
+                        border-radius:8px;
+                        font-weight:bold;
+                        font-size:15px;
+                        display:inline-block;
+                      "
+                    >
+                      Acessar Cadastro
+                    </a>
+                  </div>
+
+                  <p style="margin:0;color:#cbd5e1;font-size:12px;line-height:1.5;">
+                    Caso o botão não funcione, copie e cole este link no navegador:
+                    <br/>
+                    <span style="color:#38bdf8;word-break:break-all;">
+                      ${link}
+                    </span>
+                  </p>
+
+                </td>
+              </tr>
+
+              <tr>
+                <td
+                  style="
+                    background:#555b5f;
+                    padding:18px 32px;
+                    text-align:center;
+                    color:#cbd5e1;
+                    font-size:12px;
+                  "
+                >
+                  Operações Omnilink
+                  <br/>
+                  É sempre um prazer atender você.
+                </td>
+              </tr>
+
+            </table>
+          </td>
+        </tr>
+      </table>
+    </div>
+  `;
+}
+
 function getAbsoluteUploadPathFromUrl(url) {
   const rel = String(url || '').replace(/^\/+/, '');
   return path.resolve(process.cwd(), rel);
@@ -1613,14 +1722,19 @@ async listApprovedRegistrationDocuments(req, res) {
     const { error, value } = createInviteSchema.validate(req.body, {
       stripUnknown: true,
     });
+
     if (error) return bad(res, error.message);
 
     const need = await Need.findByPk(req.params.needId);
-    if (!need) return notFound(res, 'Prospecção não encontrada');
+
+    if (!need) {
+      return notFound(res, 'Prospecção não encontrada');
+    }
 
     await ensureDefaultDocumentTypes();
 
     const token = crypto.randomBytes(24).toString('hex');
+
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + value.expiresInDays);
 
@@ -1639,12 +1753,26 @@ async listApprovedRegistrationDocuments(req, res) {
       homologationStatus: 'LINK_SENT',
       homologationLinkSentAt: new Date(),
       providerName: need.providerName || value.technicianName,
-      providerWhatsapp: need.providerWhatsapp || value.technicianPhone || null,
+      providerWhatsapp:
+        need.providerWhatsapp || value.technicianPhone || null,
     });
+
+    const publicLink = buildPublicLink(token);
+
+    if (value.technicianEmail) {
+      await sendMail({
+        to: value.technicianEmail,
+        subject: 'Cadastro de Homologação Omnilink',
+        html: buildInviteEmailTemplate({
+          providerName: value.technicianName,
+          link: publicLink,
+        }),
+      });
+    }
 
     return created(res, {
       invite,
-      publicLink: buildPublicLink(token),
+      publicLink,
     });
   },
   async listInvites(req, res) {
@@ -2134,116 +2262,118 @@ async listApprovedRegistrationDocuments(req, res) {
     return created(res, row);
   },
 
-async reviewRegistration(req, res) {
-  const requestedRegistrationId = Number(req.body?.registrationId || 0);
+  async reviewRegistration(req, res) {
+    const requestedRegistrationId = Number(req.body?.registrationId || 0);
 
-  let row = null;
+    let row = null;
 
-  if (requestedRegistrationId) {
-    row = await NeedRegistration.findOne({
-      where: {
-        id: requestedRegistrationId,
-        needId: req.params.needId,
-      },
-    });
-  }
-
-  if (!row) {
-    row = await NeedRegistration.findOne({
-      where: { needId: req.params.needId },
-      order: [['id', 'DESC']],
-    });
-  }
-
-  if (!row) return notFound(res, 'Cadastro não encontrado');
-
-  const { error, value } = reviewRegistrationSchema.validate(req.body, {
-    stripUnknown: true,
-  });
-  if (error) return bad(res, error.message);
-
-  const snapshot = await getRegistrationApprovalSnapshot(row.id);
-
-  if (value.status === 'APPROVED') {
-    if (snapshot.requiredTotal === 0) {
-      return bad(res, 'Não é possível aprovar: nenhum documento obrigatório foi encontrado.');
+    if (requestedRegistrationId) {
+      row = await NeedRegistration.findOne({
+        where: {
+          id: requestedRegistrationId,
+          needId: req.params.needId,
+        },
+      });
     }
 
-    if (snapshot.requiredApproved !== snapshot.requiredTotal) {
-      return bad(
-        res,
-        `Não é possível aprovar: ${snapshot.requiredApproved}/${snapshot.requiredTotal} documentos obrigatórios aprovados.`
-      );
-    }
-  }
-
-  await row.update({
-    status: value.status,
-    reviewNotes: value.reviewNotes || null,
-    reviewedAt: new Date(),
-    reviewedById: req.user?.id || null,
-  });
-
-  await syncNeedHomologationStatus(row.needId);
-
-  return ok(res, row);
-},
-async sendApprovedProviderToFinance(req, res) {
-  try {
-    const { registrationId } = req.params;
-    const { to = [], cc = [], subject, message } = req.body;
-
-    const snapshot = await getRegistrationApprovalSnapshot(registrationId);
-    const registration = snapshot.registration;
-
-    if (!registration || !snapshot.isFullyApproved) {
-      return res.status(404).json({ error: 'Prestador aprovado não encontrado.' });
+    if (!row) {
+      row = await NeedRegistration.findOne({
+        where: { needId: req.params.needId },
+        order: [['id', 'DESC']],
+      });
     }
 
-    const recipients = Array.isArray(to) ? to.filter(Boolean) : [];
-    const copies = Array.isArray(cc) ? cc.filter(Boolean) : [];
+    if (!row) return notFound(res, 'Cadastro não encontrado');
 
-    if (!recipients.length) {
-      return res.status(400).json({ error: 'Informe ao menos um destinatário.' });
+    const { error, value } = reviewRegistrationSchema.validate(req.body, {
+      stripUnknown: true,
+    });
+    if (error) return bad(res, error.message);
+
+    const snapshot = await getRegistrationApprovalSnapshot(row.id);
+
+    if (value.status === 'APPROVED') {
+      if (snapshot.requiredTotal === 0) {
+        return bad(res, 'Não é possível aprovar: nenhum documento obrigatório foi encontrado.');
+      }
+
+      if (snapshot.requiredApproved !== snapshot.requiredTotal) {
+        return bad(
+          res,
+          `Não é possível aprovar: ${snapshot.requiredApproved}/${snapshot.requiredTotal} documentos obrigatórios aprovados.`
+        );
+      }
     }
 
-    await sendMail({
-      to: recipients,
-      cc: copies,
-      subject,
-      html: `
-        <p>Olá,</p>
-
-        <p>O prestador abaixo foi homologado com sucesso e já está disponível na aba <b>Prestadores Ativos</b>.</p>
-
-        <p><b>Nome:</b> ${registration.fullName || '-'}<br/>
-        <b>Empresa:</b> ${registration.company || '-'}<br/>
-        <b>CPF:</b> ${registration.cpf || '-'}<br/>
-        <b>CNPJ:</b> ${registration.cnpj || '-'}<br/>
-        <b>Telefone:</b> ${registration.phone || '-'}<br/>
-        <b>E-mail:</b> ${registration.email || '-'}<br/>
-        <b>Cidade/UF:</b> ${registration.city || '-'} / ${registration.state || '-'}</p>
-
-        <p>${message || ''}</p>
-
-        <p>Favor seguir com a criação do código do prestador no sistema ERP.</p>
-      `,
+    await row.update({
+      status: value.status,
+      reviewNotes: value.reviewNotes || null,
+      reviewedAt: new Date(),
+      reviewedById: req.user?.id || null,
     });
 
-    await registration.update({
-      financeSentAt: new Date(),
-      financeSentById: req.user?.id || null,
-    });
+    await syncNeedHomologationStatus(row.needId);
 
-    return res.json({
-      ok: true,
-      message: 'E-mail enviado ao financeiro com sucesso.',
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: 'Erro ao enviar para o financeiro.' });
-  }
-},
+    return ok(res, row);
+  },
+
+  async sendApprovedProviderToFinance(req, res) {
+    try {
+      const { registrationId } = req.params;
+      const { to = [], cc = [], subject, message } = req.body;
+
+      const snapshot = await getRegistrationApprovalSnapshot(registrationId);
+      const registration = snapshot.registration;
+
+      if (!registration || !snapshot.isFullyApproved) {
+        return res.status(404).json({ error: 'Prestador aprovado não encontrado.' });
+      }
+
+      const recipients = Array.isArray(to) ? to.filter(Boolean) : [];
+      const copies = Array.isArray(cc) ? cc.filter(Boolean) : [];
+
+      if (!recipients.length) {
+        return res.status(400).json({ error: 'Informe ao menos um destinatário.' });
+      }
+
+      await sendMail({
+        to: recipients,
+        cc: copies,
+        subject,
+        html: `
+          <p>Olá,</p>
+
+          <p>O prestador abaixo foi homologado com sucesso e já está disponível na aba <b>Prestadores Ativos</b>.</p>
+
+          <p><b>Nome:</b> ${registration.fullName || '-'}<br/>
+          <b>Empresa:</b> ${registration.company || '-'}<br/>
+          <b>CPF:</b> ${registration.cpf || '-'}<br/>
+          <b>CNPJ:</b> ${registration.cnpj || '-'}<br/>
+          <b>Telefone:</b> ${registration.phone || '-'}<br/>
+          <b>E-mail:</b> ${registration.email || '-'}<br/>
+          <b>Cidade/UF:</b> ${registration.city || '-'} / ${registration.state || '-'}</p>
+
+          <p>${message || ''}</p>
+
+          <p>Favor seguir com a criação do código do prestador no sistema ERP.</p>
+        `,
+      });
+
+      await registration.update({
+        financeSentAt: new Date(),
+        financeSentById: req.user?.id || null,
+      });
+
+      return res.json({
+        ok: true,
+        message: 'E-mail enviado ao financeiro com sucesso.',
+      });
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ error: 'Erro ao enviar para o financeiro.' });
+    }
+  },
+
   async resendInviteEmail(req, res) {
     const invite = await NeedRegistrationInvite.findByPk(req.params.inviteId);
     if (!invite) return notFound(res, 'Convite não encontrado');
@@ -2254,11 +2384,24 @@ async sendApprovedProviderToFinance(req, res) {
 
     const publicLink = buildPublicLink(invite.token);
 
+    await sendMail({
+      to: invite.technicianEmail,
+      subject: 'Cadastro de Homologação Omnilink',
+      html: buildInviteEmailTemplate({
+        providerName: invite.technicianName,
+        link: publicLink,
+      }),
+    });
+
     await invite.update({
       lastSentAt: new Date(),
     });
 
-    return ok(res, { ok: true, publicLink });
+    return ok(res, {
+      ok: true,
+      message: 'E-mail reenviado com sucesso.',
+      publicLink,
+    });
   },
 
   async deleteRegistrationDocument(req, res) {
