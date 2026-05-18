@@ -336,6 +336,159 @@ function buildInviteEmailTemplate({ providerName, link }) {
   `;
 }
 
+
+function buildAdjustmentRequiredEmailTemplate({ providerName, reviewNotes, link }) {
+  const logoUrl =
+    process.env.EMAIL_LOGO_URL ||
+    'https://app.projetos-rc.online/logo_branca.png';
+
+  const safeProviderName = providerName || 'Prestador';
+  const safeReviewNotes = reviewNotes || 'Ajuste solicitado pela equipe de homologação.';
+
+  return `
+    <div style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">
+        <tr>
+          <td align="center">
+            <table width="680" cellpadding="0" cellspacing="0"
+              style="background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.12);border:1px solid #e5e7eb;">
+
+              <tr>
+                <td style="padding:28px 32px 18px;text-align:center;background:#ffffff;">
+                  <img
+                    src="${logoUrl}"
+                    alt="Omnilink"
+                    style="width:230px;max-width:90%;height:auto;display:block;margin:0 auto;"
+                  />
+                </td>
+              </tr>
+
+              <tr>
+                <td style="padding:10px 36px 36px;">
+                  <div style="text-align:center;margin-bottom:26px;">
+                    <div
+                      style="
+                        display:inline-block;
+                        padding:8px 14px;
+                        border-radius:999px;
+                        background:#fff7ed;
+                        color:#c2410c;
+                        font-size:13px;
+                        font-weight:bold;
+                        border:1px solid #fed7aa;
+                      "
+                    >
+                      Ação necessária
+                    </div>
+
+                    <h2 style="margin:18px 0 8px;color:#111827;font-size:24px;line-height:1.3;">
+                      Ajuste necessário na homologação
+                    </h2>
+
+                    <p style="margin:0;color:#6b7280;font-size:15px;line-height:1.6;">
+                      Para dar continuidade ao processo, corrija as informações ou documentos solicitados abaixo.
+                    </p>
+                  </div>
+
+                  <div
+                    style="
+                      padding:18px;
+                      background:#f9fafb;
+                      border:1px solid #e5e7eb;
+                      border-radius:14px;
+                      margin-bottom:18px;
+                    "
+                  >
+                    <p style="margin:0 0 12px;color:#111827;font-size:15px;line-height:1.6;">
+                      Olá, <b>${safeProviderName}</b>.
+                    </p>
+
+                    <p style="margin:0;color:#374151;font-size:15px;line-height:1.6;">
+                      Sua homologação foi analisada e precisa de ajustes antes da aprovação final.
+                    </p>
+                  </div>
+
+                  <div
+                    style="
+                      padding:18px;
+                      background:#fff7ed;
+                      border:1px solid #fdba74;
+                      border-left:5px solid #f97316;
+                      border-radius:14px;
+                      margin:18px 0;
+                    "
+                  >
+                    <p style="margin:0 0 8px;color:#9a3412;font-size:14px;font-weight:bold;">
+                      Motivo do ajuste
+                    </p>
+
+                    <p style="margin:0;color:#111827;font-size:15px;line-height:1.7;white-space:pre-line;">
+                      ${safeReviewNotes}
+                    </p>
+                  </div>
+
+                  ${
+                    link
+                      ? `
+                        <div style="text-align:center;margin:30px 0 24px;">
+                          <a
+                            href="${link}"
+                            target="_blank"
+                            style="
+                              background:#0070b8;
+                              color:#ffffff;
+                              text-decoration:none;
+                              padding:14px 28px;
+                              border-radius:10px;
+                              font-weight:bold;
+                              font-size:15px;
+                              display:inline-block;
+                            "
+                          >
+                            Acessar cadastro para ajustar
+                          </a>
+                        </div>
+
+                        <p style="margin:0;color:#6b7280;font-size:12px;line-height:1.5;text-align:center;">
+                          Caso o botão não funcione, copie e cole este link no navegador:<br/>
+                          <span style="color:#0070b8;word-break:break-all;">
+                            ${link}
+                          </span>
+                        </p>
+                      `
+                      : `
+                        <p style="margin:20px 0 0;color:#6b7280;font-size:14px;line-height:1.6;">
+                          Acesse novamente o portal pelo link recebido anteriormente para corrigir os itens solicitados.
+                        </p>
+                      `
+                  }
+                </td>
+              </tr>
+
+              <tr>
+                <td
+                  style="
+                    background:#f8fafc;
+                    padding:18px 32px;
+                    text-align:center;
+                    color:#64748b;
+                    font-size:12px;
+                    border-top:1px solid #e5e7eb;
+                  "
+                >
+                  Operações Omnilink<br/>
+                  É sempre um prazer atender você.
+                </td>
+              </tr>
+
+            </table>
+          </td>
+        </tr>
+      </table>
+    </div>
+  `;
+}
+
 function getAbsoluteUploadPathFromUrl(url) {
   const rel = String(url || '').replace(/^\/+/, '');
   return path.resolve(process.cwd(), rel);
@@ -476,12 +629,13 @@ async function syncNeedHomologationStatus(needId) {
     return;
   }
 
+
   if (registration.status === 'ADJUSTMENT_REQUIRED') {
     await need.update({
       homologationStatus: 'ADJUSTMENT_REQUIRED',
+      homologationSubmittedAt: registration.submittedAt || null,
       homologationReviewedAt: registration.reviewedAt || new Date(),
       homologationReviewedById: registration.reviewedById || null,
-      homologationSubmittedAt: registration.submittedAt || null,
     });
     return;
   }
@@ -2302,6 +2456,33 @@ async listApprovedRegistrationDocuments(req, res) {
       reviewedAt: new Date(),
       reviewedById: req.user?.id || null,
     });
+
+    if (value.status === 'ADJUSTMENT_REQUIRED') {
+      try {
+        if (row.email) {
+          const invite = row.inviteId
+            ? await NeedRegistrationInvite.findByPk(row.inviteId)
+            : await NeedRegistrationInvite.findOne({
+                where: { needId: row.needId },
+                order: [['id', 'DESC']],
+              });
+
+          const publicLink = invite?.token ? buildPublicLink(invite.token) : null;
+
+          await sendMail({
+            to: row.email,
+            subject: 'Ajuste necessário na homologação Omnilink',
+            html: buildAdjustmentRequiredEmailTemplate({
+              providerName: row.fullName || row.company || 'Prestador',
+              reviewNotes: value.reviewNotes,
+              link: publicLink,
+            }),
+          });
+        }
+      } catch (err) {
+        console.error('Erro ao enviar e-mail de ajuste:', err);
+      }
+    }
 
     await syncNeedHomologationStatus(row.needId);
 
