@@ -56,6 +56,19 @@ const AutoInventoryResponseItem = require('./AutoInventoryResponseItem');
 const AutoInventoryResponseItemSerial = require('./AutoInventoryResponseItemSerial');
 const AutoInventoryConfig = require('./AutoInventoryConfig');
 
+//Reversa
+const ReverseConfig = require('./ReverseConfig');
+const ReverseCycle = require('./ReverseCycle');
+const ReverseItem = require('./ReverseItem');
+const ReverseResponse = require('./ReverseResponse');
+const ReverseResponseItem = require('./ReverseResponseItem');
+const ReverseResponseItemSerial = require('./ReverseResponseItemSerial');
+const ReverseResponsePhoto = require('./ReverseResponsePhoto');
+const ReverseTransportNote = require('./ReverseTransportNote');
+const ReverseCollectionRequest = require('./ReverseCollectionRequest');
+const ReverseProviderSetting = require('./ReverseProviderSetting');
+const ReverseChatMessage = require('./ReverseChatMessage');
+
 // ----------------- Whatsapp  -----------------
 WhatsappConversation.hasMany(WhatsappMessage, {  as: 'messages',  foreignKey: 'conversationId',  onDelete: 'CASCADE',});
 WhatsappMessage.belongsTo(WhatsappConversation, {  as: 'conversation',  foreignKey: 'conversationId',});
@@ -125,6 +138,42 @@ AutoInventoryResponseItemSerial.belongsTo(AutoInventoryResponseItem, {
   as: 'responseItem',
   foreignKey: 'responseItemId',
 });
+
+
+// ----------------- Reversa de Equipamentos -----------------
+ReverseCycle.hasMany(ReverseResponse, { as: 'responses', foreignKey: 'cycleId', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
+ReverseResponse.belongsTo(ReverseCycle, { as: 'cycle', foreignKey: 'cycleId' });
+
+User.hasMany(ReverseResponse, { as: 'reverseResponses', foreignKey: 'providerId' });
+ReverseResponse.belongsTo(User, { as: 'provider', foreignKey: 'providerId' });
+
+ReverseResponse.hasMany(ReverseResponseItem, { as: 'items', foreignKey: 'responseId', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
+ReverseResponseItem.belongsTo(ReverseResponse, { as: 'response', foreignKey: 'responseId' });
+
+ReverseItem.hasMany(ReverseResponseItem, { as: 'responses', foreignKey: 'itemId' });
+ReverseResponseItem.belongsTo(ReverseItem, { as: 'item', foreignKey: 'itemId' });
+
+ReverseResponseItem.hasMany(ReverseResponseItemSerial, { as: 'serials', foreignKey: 'responseItemId', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
+ReverseResponseItemSerial.belongsTo(ReverseResponseItem, { as: 'responseItem', foreignKey: 'responseItemId' });
+
+ReverseResponse.hasMany(ReverseResponsePhoto, { as: 'photos', foreignKey: 'responseId', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
+ReverseResponsePhoto.belongsTo(ReverseResponse, { as: 'response', foreignKey: 'responseId' });
+
+ReverseResponse.hasMany(ReverseTransportNote, { as: 'transportNotes', foreignKey: 'responseId', onDelete: 'SET NULL', onUpdate: 'CASCADE' });
+ReverseTransportNote.belongsTo(ReverseResponse, { as: 'response', foreignKey: 'responseId' });
+User.hasMany(ReverseTransportNote, { as: 'reverseTransportNotes', foreignKey: 'providerId' });
+ReverseTransportNote.belongsTo(User, { as: 'provider', foreignKey: 'providerId' });
+
+ReverseResponse.hasMany(ReverseCollectionRequest, { as: 'collectionRequests', foreignKey: 'responseId', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
+ReverseCollectionRequest.belongsTo(ReverseResponse, { as: 'response', foreignKey: 'responseId' });
+User.hasMany(ReverseCollectionRequest, { as: 'reverseCollectionRequestsCreated', foreignKey: 'createdById' });
+ReverseCollectionRequest.belongsTo(User, { as: 'createdBy', foreignKey: 'createdById' });
+
+ReverseResponse.hasMany(ReverseChatMessage, { as: 'chatMessages', foreignKey: 'responseId', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
+ReverseChatMessage.belongsTo(ReverseResponse, { as: 'response', foreignKey: 'responseId' });
+
+User.hasMany(ReverseProviderSetting, { as: 'reverseProviderSettings', foreignKey: 'providerId' });
+ReverseProviderSetting.belongsTo(User, { as: 'provider', foreignKey: 'providerId' });
 
 // ----------------- LOGS Usuarios -----------------
 
@@ -751,4 +800,15 @@ module.exports = {
   AutoInventoryResponseItem,
   AutoInventoryResponseItemSerial,
   AutoInventoryConfig,
+  ReverseConfig,
+  ReverseCycle,
+  ReverseItem,
+  ReverseResponse,
+  ReverseResponseItem,
+  ReverseResponseItemSerial,
+  ReverseResponsePhoto,
+  ReverseTransportNote,
+  ReverseCollectionRequest,
+  ReverseProviderSetting,
+  ReverseChatMessage,
 };

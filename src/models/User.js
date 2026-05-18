@@ -33,6 +33,11 @@ const ALLOWED_PERMISSIONS = [
   'DELIVERY_REPORTS_VIEW',
   'AUTO_INVENTORY_VIEW',
   'AUTO_INVENTORY_ADMIN',
+  'REVERSE_VIEW',
+  'REVERSE_MANAGE',
+  'REVERSE_ITEMS_MANAGE',
+  'REVERSE_SEND_EMAILS',
+  'REVERSE_COLLECTION_MANAGE',
   'ACTIVITY_LOGS_VIEW',
   'MEDIA_VIEW',
   'WHATSAPP_VIEW',
@@ -120,6 +125,10 @@ User.init(
       allowNull: true,
     },
     autoInventoryEnabled: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
+    reverseEnabled: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
     },
