@@ -99,8 +99,8 @@ const DEFAULT_REQUIRED_DOCUMENTS = [
   {
     name: 'Documento do veículo 2',
     code: 'DOCUMENTO_VEICULO_2',
-    description: 'Segundo documento obrigatório do veículo.',
-    isRequired: true,
+    description: 'Segundo documento opcional do veículo.',
+    isRequired: false,
     allowMultiple: false,
     sortOrder: 70,
   },
@@ -121,6 +121,49 @@ const DEFAULT_REQUIRED_DOCUMENTS = [
     sortOrder: 1000,
   },
 ];
+
+
+function hasRegistrationVehicle(registration) {
+  return !!(
+    registration?.vehicleCar ||
+    registration?.vehicleMoto ||
+    registration?.vehicleTruck
+  );
+}
+
+function hasRegistrationWorkshop(registration) {
+  return !!(
+    registration?.serviceOmnilinkWorkshop ||
+    registration?.serviceLinkerWorkshop
+  );
+}
+
+function isRequiredDocumentTypeForRegistration(docType, registration) {
+  const code = String(docType?.code || '').trim().toUpperCase();
+
+  if (!code) return false;
+  if (code === EXTRA_DOCUMENT_CODE) return false;
+  if (code === INTERNAL_DOCUMENT_CODE) return false;
+  if (REMOVED_ATA_CODES.includes(code)) return false;
+
+  const hasVehicle = hasRegistrationVehicle(registration);
+  const hasWorkshop = hasRegistrationWorkshop(registration);
+
+  // Regra solicitada:
+  // - Documento de veículo só é obrigatório quando o técnico informou que possui veículo.
+  // - Somente o Documento do veículo 1 é obrigatório.
+  // - Documento do veículo 2 e fotos do veículo são opcionais.
+  if (code === 'DOCUMENTO_VEICULO_1') return hasVehicle;
+  if (code === 'DOCUMENTO_VEICULO_2') return false;
+  if (code === 'FOTO_VEICULO_1') return false;
+  if (code === 'FOTO_VEICULO_2') return false;
+
+  // Fotos da oficina continuam obrigatórias somente quando houver oficina/posto.
+  if (code === 'FOTO_FACHADA') return hasWorkshop;
+  if (code === 'FOTO_INTERIOR') return hasWorkshop;
+
+  return !!docType?.isRequired;
+}
 
 function buildPublicLink(token) {
   const base = process.env.API_URL || 'http://localhost:5173';
@@ -529,33 +572,9 @@ async function getGroupedRegistrationDocuments(registrationId) {
   const internalDocumentType =
     documentTypes.find((docType) => docType.code === INTERNAL_DOCUMENT_CODE) || null;
 
-  const hasVehicle =
-    !!registration.vehicleCar ||
-    !!registration.vehicleMoto ||
-    !!registration.vehicleTruck;
-
-  const hasWorkshop =
-    !!registration.serviceOmnilinkWorkshop ||
-    !!registration.serviceLinkerWorkshop;
-
-  const conditionalRequiredCodes = new Set();
-
-  if (hasWorkshop) {
-    conditionalRequiredCodes.add('FOTO_FACHADA');
-    conditionalRequiredCodes.add('FOTO_INTERIOR');
-  }
-
-  if (hasVehicle) {
-    conditionalRequiredCodes.add('FOTO_VEICULO_1');
-    conditionalRequiredCodes.add('FOTO_VEICULO_2');
-  }
-
-  const requiredDocumentTypes = documentTypes.filter((docType) => {
-    if (docType.code === EXTRA_DOCUMENT_CODE) return false;
-    if (docType.code === INTERNAL_DOCUMENT_CODE) return false;
-
-    return docType.isRequired || conditionalRequiredCodes.has(docType.code);
-  });
+  const requiredDocumentTypes = documentTypes.filter((docType) =>
+    isRequiredDocumentTypeForRegistration(docType, registration)
+  );
 
   const requiredChecklist = requiredDocumentTypes.map((docType) => {
     const docs = documents.filter((doc) => doc.documentTypeId === docType.id);
@@ -1366,12 +1385,12 @@ async getApprovedRegistrationDetail(req, res) {
 
     const json = registration.toJSON();
 
-    const requiredDocuments = (json.documents || []).filter(
-      (doc) => doc.documentType?.isRequired
+    const requiredDocuments = (json.documents || []).filter((doc) =>
+      isRequiredDocumentTypeForRegistration(doc.documentType, json)
     );
 
     const additionalDocuments = (json.documents || []).filter(
-      (doc) => !doc.documentType?.isRequired
+      (doc) => !isRequiredDocumentTypeForRegistration(doc.documentType, json)
     );
 
     const requiredTotal = requiredDocuments.length;
@@ -2069,36 +2088,8 @@ async listApprovedRegistrationDocuments(req, res) {
       order: [['sortOrder', 'ASC']],
     });
 
-    const requiredCodes = new Set([
-      'CNH',
-      'CARTAO_CNPJ',
-      'COMPROVANTE_RESIDENCIA',
-      'CONTRATO_SOCIAL',
-      'DOCUMENTO_VEICULO_1',
-      'DOCUMENTO_VEICULO_2',
-    ]);
-
-    const hasVehicle =
-      !!registration.vehicleCar ||
-      !!registration.vehicleMoto ||
-      !!registration.vehicleTruck;
-
-    const hasWorkshop =
-      !!registration.serviceOmnilinkWorkshop ||
-      !!registration.serviceLinkerWorkshop;
-
-    if (hasVehicle) {
-      requiredCodes.add('FOTO_VEICULO_1');
-      requiredCodes.add('FOTO_VEICULO_2');
-    }
-
-    if (hasWorkshop) {
-      requiredCodes.add('FOTO_FACHADA');
-      requiredCodes.add('FOTO_INTERIOR');
-    }
-
     const requiredDocs = allDocumentTypes.filter((docType) =>
-      requiredCodes.has(docType.code)
+      isRequiredDocumentTypeForRegistration(docType, registration)
     );
 
     for (const docType of requiredDocs) {
